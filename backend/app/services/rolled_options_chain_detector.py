@@ -1,0 +1,1639 @@
+"""
+Rolled Options Chain Detection Service
+
+Implements precise chain detection logic based on proper options rolling patterns:
+
+Sell-to-Open Chain Pattern:
+1. Initial: SELL TO OPEN (1 leg) - Opens short position
+2. Rolls: BUY TO CLOSE (old) + SELL TO OPEN (new) (2 legs) - Rolls position
+3. Final: BUY TO CLOSE (1 leg) - Closes final position
+
+Buy-to-Open Chain Pattern:
+1. Initial: BUY TO OPEN (1 leg) - Opens long position
+2. Rolls: SELL TO CLOSE (old) + BUY TO OPEN (new) (2 legs) - Rolls position
+3. Final: SELL TO CLOSE (1 leg) - Closes final position
+
+Requirements:
+- Max 8 months between orders in chain
+- Strikes must match exactly (except middle orders can roll up/down)
+- Same expiration dates within chain
+- Symbol-specific chains only
+- No partial chains allowed
+"""
+
+import logging
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Any, Tuple
+from collections import defaultdict
+from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class LegInfo:
+    """Information about an options leg"""
+    strike_price: float
+    option_type: str  # 'call' or 'put'
+    expiration_date: str
+    side: str  # 'buy' or 'sell'
+    position_effect: str  # 'open' or 'close'
+    quantity: float
+
+
+@dataclass
+class OrderInfo:
+    """Analyzed information about an options order"""
+    order_id: str
+    created_at: datetime
+    underlying_symbol: str
+    legs: List[LegInfo]
+    opens: List[LegInfo]  # SELL/BUY TO OPEN legs
+    closes: List[LegInfo]  # BUY/SELL TO CLOSE legs
+    raw_order: Dict[str, Any]
+
+
+class RolledOptionsChainDetector:
+    """Service for detecting rolled options chains with precise pattern matching"""
+    
+    def __init__(self):
+        self.max_chain_duration = timedelta(days=240)  # 8 months
+    
+    def detect_chains(self, orders: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+        """
+        Detect rolled options chains from a list of orders using lazy approach
+        
+        Instead of analyzing all orders, we look for orders with 'strategy_roll' 
+        field which indicates they're part of rolling operations.
+        
+        Args:
+            orders: List of options orders
+            
+        Returns:
+            List of chains, where each chain is a list of orders
+        """
+        import time
+        start_time = time.time()
+        
+        try:
+            # First, find orders that indicate rolling activity
+            roll_orders = []
+            opening_orders = []
+            strategies = set()
+            
+            for order in orders:
+                strategy = order.get('strategy', '').lower()
+                strategies.add(strategy)
+                
+                # Look for roll indicators in multiple fields
+                form_source = order.get('form_source', '').lower()
+                if ('roll' in strategy or 
+                    form_source == 'strategy_roll' or
+                    'calendar_spread' in strategy or
+                    order.get('rolled_from') or
+                    order.get('rolled_to')):
+                    roll_orders.append(order)
+                elif (order.get('opening_strategy') and 
+                      len(order.get('legs', [])) == 1):
+                    # Single-leg opening orders that could start chains
+                    opening_orders.append(order)
+            
+            # Log unique strategies for debugging
+            logger.info(f"Found strategies: {sorted(list(strategies))[:10]}")  # First 10 unique strategies
+            logger.info(f"Found {len(roll_orders)} roll orders and {len(opening_orders)} potential chain starts")
+            
+            if not roll_orders:
+                logger.info("No roll orders found - no chains to detect")
+                return []
+            
+            # Group roll orders by symbol and type for faster processing
+            roll_groups = self._group_orders_by_symbol(roll_orders)
+            opening_groups = self._group_orders_by_symbol(opening_orders)
+            
+            all_chains = []
+            
+            # For each symbol+type group that has roll activity, build chains
+            for group_key in roll_groups.keys():
+                symbol_type_roll_orders = roll_groups[group_key]
+                symbol_type_opening_orders = opening_groups.get(group_key, [])
+                
+                # Combine orders for this symbol+type and sort by time
+                group_orders = symbol_type_roll_orders + symbol_type_opening_orders
+                group_orders.sort(key=lambda x: x.get('created_at', ''))
+                
+                chains = self._build_chains_from_roll_activity(group_key, group_orders)
+                all_chains.extend(chains)
+                
+                logger.info(f"Found {len(chains)} chains for {group_key}")
+            
+            # If complex chain building didn't work, fall back to simple approach
+            if len(all_chains) == 0 and len(roll_orders) > 0:
+                logger.info("Complex chain building found no chains, falling back to simple approach")
+                all_chains = self._create_simple_chains_from_rolls(orders)
+            
+            total_time = time.time() - start_time
+            logger.info(f"Lazy chain detection completed: {len(all_chains)} chains found in {total_time:.1f}s")
+            return all_chains
+            
+        except Exception as e:
+            logger.error(f"Error in lazy chain detection: {e}", exc_info=True)
+            return []
+    
+    def _analyze_orders(self, orders: List[Dict[str, Any]]) -> List[OrderInfo]:
+        """Convert raw orders to analyzed OrderInfo objects"""
+        analyzed = []
+        
+        for order in orders:
+            try:
+                # Parse basic order info
+                order_id = order.get("id", "")
+                created_at_str = order.get("created_at", "")
+                underlying_symbol = order.get("underlying_symbol", "").upper()
+                
+                if not all([order_id, created_at_str, underlying_symbol]):
+                    continue
+                
+                # Parse timestamp
+                created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                
+                # Parse legs
+                legs_data = order.get("legs", [])
+                if not legs_data:
+                    continue
+                
+                legs = []
+                opens = []
+                closes = []
+                
+                for leg_data in legs_data:
+                    leg = self._parse_leg(leg_data)
+                    if leg:
+                        legs.append(leg)
+                        if leg.position_effect == 'open':
+                            opens.append(leg)
+                        elif leg.position_effect == 'close':
+                            closes.append(leg)
+                
+                if not legs:
+                    continue
+                
+                order_info = OrderInfo(
+                    order_id=order_id,
+                    created_at=created_at,
+                    underlying_symbol=underlying_symbol,
+                    legs=legs,
+                    opens=opens,
+                    closes=closes,
+                    raw_order=order
+                )
+                
+                analyzed.append(order_info)
+                
+            except Exception as e:
+                logger.debug(f"Error analyzing order {order.get('id', 'unknown')}: {e}")
+                continue
+        
+        return analyzed
+    
+    def _parse_leg(self, leg_data: Dict[str, Any]) -> Optional[LegInfo]:
+        """Parse a single leg from order data"""
+        try:
+            # Extract required fields
+            strike_price = float(leg_data.get("strike_price", 0) or 0)
+            option_type = leg_data.get("option_type", "").lower()
+            expiration_date = leg_data.get("expiration_date", "")
+            side = leg_data.get("side", "").lower()
+            position_effect = leg_data.get("position_effect", "").lower()
+            quantity = float(leg_data.get("quantity", 0) or 0)
+            
+            # Validate required fields
+            if not all([strike_price, option_type, expiration_date, side, position_effect]):
+                return None
+            
+            if option_type not in ['call', 'put']:
+                return None
+            
+            if side not in ['buy', 'sell']:
+                return None
+            
+            if position_effect not in ['open', 'close']:
+                return None
+            
+            return LegInfo(
+                strike_price=strike_price,
+                option_type=option_type,
+                expiration_date=expiration_date,
+                side=side,
+                position_effect=position_effect,
+                quantity=quantity
+            )
+            
+        except Exception as e:
+            logger.debug(f"Error parsing leg: {e}")
+            return None
+    
+    def _group_orders_by_symbol_type(self, orders: List[OrderInfo]) -> Dict[str, List[OrderInfo]]:
+        """Group orders by underlying symbol and option type"""
+        groups = defaultdict(list)
+        
+        for order in orders:
+            # Get primary option type from first leg
+            if order.legs:
+                option_type = order.legs[0].option_type
+                group_key = f"{order.underlying_symbol}_{option_type}"
+                groups[group_key].append(order)
+        
+        # Sort each group chronologically
+        for group_key in groups:
+            groups[group_key].sort(key=lambda x: x.created_at)
+        
+        return dict(groups)
+    
+    def _group_orders_by_symbol(self, orders: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+        """Group orders by underlying symbol and option type to prevent mixing calls and puts"""
+        from collections import defaultdict
+        groups = defaultdict(list)
+        
+        for order in orders:
+            # Use correct field name from actual data structure
+            symbol = order.get('chain_symbol', '') or order.get('underlying_symbol', '')
+            symbol = symbol.upper() if symbol else ''
+            if not symbol:
+                continue
+            
+            # Get primary option type from first leg to ensure calls and puts are separated
+            legs = order.get('legs', [])
+            if not legs:
+                continue
+                
+            primary_option_type = legs[0].get('option_type', '').lower()
+            if primary_option_type not in ['call', 'put']:
+                continue
+            
+            # Group by symbol + option type
+            group_key = f"{symbol}_{primary_option_type}"
+            groups[group_key].append(order)
+        
+        # Sort each group chronologically
+        for group_key in groups:
+            groups[group_key].sort(key=lambda x: x.get('created_at', ''))
+        
+        return dict(groups)
+    
+    def _build_chains_from_roll_activity(self, group_key: str, orders: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+        """Build chains for a symbol+type group using roll activity as indicator"""
+        chains = []
+        used_orders = set()
+        
+        # Find roll orders as anchor points - use broader criteria
+        roll_orders = []
+        for order in orders:
+            form_source = order.get('form_source', '').lower()
+            strategy = order.get('strategy', '').lower()
+            
+            if (form_source == 'strategy_roll' or 
+                'calendar_spread' in strategy or
+                'roll' in strategy):
+                roll_orders.append(order)
+        
+        logger.info(f"Processing {len(roll_orders)} roll orders for {group_key}")
+        
+        # Use the proper roll chain building with position effect validation
+        try:
+            symbol, option_type = group_key.split('_', 1)
+            chains = self._build_proper_roll_chains(roll_orders, symbol, option_type)
+        except ValueError:
+            # Fallback if group_key doesn't have expected format
+            logger.warning(f"Invalid group key format: {group_key}, skipping proper validation")
+            chains = []
+        
+        logger.info(f"Created {len(chains)} validated chains for {group_key}")
+        return chains
+    
+    def _build_chain_around_roll(
+        self, 
+        roll_order: Dict[str, Any], 
+        all_orders: List[Dict[str, Any]], 
+        used_orders: set
+    ) -> List[Dict[str, Any]]:
+        """Build a chain starting from a roll order"""
+        
+        chain = [roll_order]  # Start with the roll order itself
+        symbol = roll_order.get('underlying_symbol', '')
+        
+        # If roll order has both opening and closing strategy, it's already a complete chain element
+        if roll_order.get('opening_strategy') and roll_order.get('closing_strategy'):
+            # Look for related orders - both before and after
+            
+            # Look backward for the initial opening
+            opening_candidates = [
+                order for order in all_orders
+                if (order.get('created_at', '') < roll_order.get('created_at', '') and
+                    order.get('id') not in used_orders and
+                    order.get('underlying_symbol') == symbol and
+                    len(order.get('legs', [])) == 1 and
+                    order.get('opening_strategy') and
+                    not order.get('closing_strategy'))
+            ]
+            
+            if opening_candidates:
+                # Get the most recent opening order before this roll
+                opening_candidates.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+                opening_order = opening_candidates[0]
+                chain.insert(0, opening_order)  # Insert at beginning
+            
+            # Look forward for more rolls or final close
+            current_time = roll_order.get('created_at', '')
+            
+            for i in range(10):  # Max 10 additional orders
+                next_candidates = [
+                    order for order in all_orders
+                    if (order.get('created_at', '') > current_time and
+                        order.get('id') not in used_orders and
+                        order.get('underlying_symbol') == symbol and
+                        order.get('id') != roll_order.get('id'))
+                ]
+                
+                if not next_candidates:
+                    break
+                
+                # Sort by time and check if any could continue the chain
+                next_candidates.sort(key=lambda x: x.get('created_at', ''))
+                
+                found_continuation = False
+                for candidate in next_candidates[:3]:  # Check first 3 closest orders
+                    form_source = candidate.get('form_source', '').lower()
+                    strategy = candidate.get('strategy', '').lower()
+                    
+                    # Check if this is another roll or a closing order
+                    if (form_source == 'strategy_roll' or 
+                        'calendar_spread' in strategy or
+                        (len(candidate.get('legs', [])) == 1 and candidate.get('closing_strategy'))):
+                        
+                        chain.append(candidate)
+                        current_time = candidate.get('created_at', '')
+                        found_continuation = True
+                        
+                        # If this is a single-leg closing order, we're done
+                        if (len(candidate.get('legs', [])) == 1 and 
+                            candidate.get('closing_strategy') and 
+                            not candidate.get('opening_strategy')):
+                            break
+                        
+                        break
+                
+                if not found_continuation:
+                    break
+        
+        return chain if len(chain) >= 2 else []
+    
+    def _could_be_chain_continuation(self, prev_order: Dict[str, Any], next_order: Dict[str, Any]) -> bool:
+        """Simple check if next_order could continue the chain from prev_order"""
+        
+        # Same symbol check
+        if prev_order.get('underlying_symbol') != next_order.get('underlying_symbol'):
+            return False
+        
+        # Time check - must be within reasonable window
+        prev_time = prev_order.get('created_at', '')
+        next_time = next_order.get('created_at', '')
+        
+        if prev_time and next_time:
+            try:
+                from datetime import datetime
+                prev_dt = datetime.fromisoformat(prev_time.replace('Z', '+00:00'))
+                next_dt = datetime.fromisoformat(next_time.replace('Z', '+00:00'))
+                
+                if (next_dt - prev_dt) > self.max_chain_duration:
+                    return False
+            except:
+                pass
+        
+        # If next order is a roll or close, it could continue
+        strategy = next_order.get('strategy', '').lower()
+        if 'roll' in strategy or next_order.get('closing_strategy'):
+            return True
+        
+        return False
+    
+    def _detect_chains_in_group(self, group_key: str, orders: List[OrderInfo]) -> List[List[Dict[str, Any]]]:
+        """Detect chains within a single symbol+type group"""
+        chains = []
+        used_orders = set()
+        
+        # Find potential chain starts (single leg OPEN orders)
+        potential_starts = []
+        for order in orders:
+            if (len(order.legs) == 1 and 
+                order.opens and 
+                not order.closes and
+                order.order_id not in used_orders):
+                potential_starts.append(order)
+        
+        logger.info(f"Found {len(potential_starts)} potential chain starts in {group_key}")
+        
+        # Limit processing to prevent timeouts
+        max_starts_to_process = 50  # Process max 50 potential starts per group
+        starts_to_process = potential_starts[:max_starts_to_process]
+        
+        if len(potential_starts) > max_starts_to_process:
+            logger.warning(f"Limited processing to first {max_starts_to_process} starts (of {len(potential_starts)}) to prevent timeout")
+        
+        # Build chains from each potential start
+        for i, start_order in enumerate(starts_to_process):
+            if start_order.order_id in used_orders:
+                continue
+            
+            # Log progress for large groups
+            if i > 0 and i % 10 == 0:
+                logger.info(f"Processed {i}/{len(starts_to_process)} potential starts in {group_key}")
+            
+            chain = self._build_chain_from_start(start_order, orders, used_orders)
+            
+            if chain and self._validate_chain(chain):
+                # Convert back to raw orders for return
+                raw_chain = [order_info.raw_order for order_info in chain]
+                chains.append(raw_chain)
+                
+                # Mark orders as used
+                for order_info in chain:
+                    used_orders.add(order_info.order_id)
+                
+                logger.debug(f"Valid chain found with {len(chain)} orders starting from {start_order.order_id}")
+        
+        logger.info(f"Completed chain detection for {group_key}: {len(chains)} chains found")
+        return chains
+    
+    def _build_chain_from_start(
+        self, 
+        start_order: OrderInfo, 
+        all_orders: List[OrderInfo],
+        used_orders: set
+    ) -> Optional[List[OrderInfo]]:
+        """Build a chain starting from an initial order"""
+        
+        chain = [start_order]
+        current_position = start_order.opens[0]  # The position we opened
+        
+        # Determine chain type from start order
+        if current_position.side == 'sell':
+            chain_type = 'sell_to_open'
+        elif current_position.side == 'buy':
+            chain_type = 'buy_to_open'
+        else:
+            return None
+        
+        # Pre-filter candidate orders for efficiency
+        candidate_orders = [
+            order for order in all_orders 
+            if (order.created_at > start_order.created_at and 
+                order.order_id not in used_orders and
+                order.order_id != start_order.order_id and
+                (order.created_at - start_order.created_at) <= self.max_chain_duration and
+                order.underlying_symbol == start_order.underlying_symbol)
+        ]
+        
+        # Sort by creation time for sequential processing
+        candidate_orders.sort(key=lambda x: x.created_at)
+        
+        max_chain_length = 20  # Prevent infinite loops
+        iteration_count = 0
+        
+        # Build chain by following the pattern
+        while candidate_orders and iteration_count < max_chain_length:
+            iteration_count += 1
+            
+            next_order = self._find_next_order_in_chain(
+                chain, current_position, candidate_orders, chain_type
+            )
+            
+            if not next_order:
+                break
+            
+            chain.append(next_order)
+            candidate_orders.remove(next_order)
+            
+            # Update current position for next iteration
+            if next_order.opens:
+                # This was a roll - current position is now the new open
+                current_position = next_order.opens[0]
+            else:
+                # This was a final close - chain is complete
+                break
+        
+        # Must have at least 2 orders to be a chain
+        return chain if len(chain) >= 2 else None
+    
+    def _find_next_order_in_chain(
+        self,
+        current_chain: List[OrderInfo],
+        current_position: LegInfo,
+        candidates: List[OrderInfo],
+        chain_type: str
+    ) -> Optional[OrderInfo]:
+        """Find the next order that continues the chain"""
+        
+        for candidate in candidates:
+            if self._is_valid_next_order(current_position, candidate, chain_type):
+                return candidate
+        
+        return None
+    
+    def _is_valid_next_order(
+        self,
+        current_position: LegInfo,
+        candidate: OrderInfo,
+        chain_type: str
+    ) -> bool:
+        """Check if candidate order can be next in the chain"""
+        
+        # Check if this is a roll (2 legs) or final close (1 leg)
+        if len(candidate.legs) == 2:
+            # This should be a roll: CLOSE old + OPEN new
+            if not (candidate.closes and candidate.opens):
+                return False
+            
+            close_leg = candidate.closes[0]
+            open_leg = candidate.opens[0]
+            
+            # Validate the close leg matches current position
+            if not self._legs_match_for_close(current_position, close_leg, chain_type):
+                return False
+            
+            # Validate the open leg is correct type for chain
+            if not self._is_valid_roll_open(open_leg, chain_type):
+                return False
+            
+            return True
+            
+        elif len(candidate.legs) == 1:
+            # This should be a final close
+            if not candidate.closes or candidate.opens:
+                return False
+            
+            close_leg = candidate.closes[0]
+            return self._legs_match_for_close(current_position, close_leg, chain_type)
+        
+        return False
+    
+    def _legs_match_for_close(
+        self,
+        open_leg: LegInfo,
+        close_leg: LegInfo,
+        chain_type: str
+    ) -> bool:
+        """Check if close leg properly closes the open leg"""
+        
+        # Strike, type, and expiration must match exactly
+        if (open_leg.strike_price != close_leg.strike_price or
+            open_leg.option_type != close_leg.option_type or
+            open_leg.expiration_date != close_leg.expiration_date):
+            return False
+        
+        # Side must be opposite
+        if chain_type == 'sell_to_open':
+            return open_leg.side == 'sell' and close_leg.side == 'buy'
+        elif chain_type == 'buy_to_open':
+            return open_leg.side == 'buy' and close_leg.side == 'sell'
+        
+        return False
+    
+    def _is_valid_roll_open(self, open_leg: LegInfo, chain_type: str) -> bool:
+        """Check if open leg is valid for the chain type"""
+        
+        if chain_type == 'sell_to_open':
+            return open_leg.side == 'sell' and open_leg.position_effect == 'open'
+        elif chain_type == 'buy_to_open':
+            return open_leg.side == 'buy' and open_leg.position_effect == 'open'
+        
+        return False
+    
+    def _validate_chain(self, chain: List[OrderInfo]) -> bool:
+        """Validate that the chain follows proper rolled options pattern"""
+        
+        if len(chain) < 2:
+            return False
+        
+        # First order: must be single leg OPEN
+        first_order = chain[0]
+        if (len(first_order.legs) != 1 or 
+            not first_order.opens or 
+            first_order.closes):
+            return False
+        
+        # Determine chain type
+        first_leg = first_order.opens[0]
+        if first_leg.side == 'sell':
+            chain_type = 'sell_to_open'
+        elif first_leg.side == 'buy':
+            chain_type = 'buy_to_open'
+        else:
+            return False
+        
+        # Middle orders: must be 2 legs (CLOSE + OPEN)
+        for order in chain[1:-1]:
+            if (len(order.legs) != 2 or
+                len(order.closes) != 1 or
+                len(order.opens) != 1):
+                return False
+        
+        # Last order: must be single leg CLOSE
+        last_order = chain[-1]
+        if len(last_order.legs) == 1:
+            # Single leg close - this is the final close
+            if (not last_order.closes or 
+                last_order.opens):
+                return False
+            
+            # Validate close side matches chain type
+            close_leg = last_order.closes[0]
+            if chain_type == 'sell_to_open' and close_leg.side != 'buy':
+                return False
+            elif chain_type == 'buy_to_open' and close_leg.side != 'sell':
+                return False
+        elif len(last_order.legs) == 2:
+            # Last order is also a roll - this is valid
+            if (len(last_order.closes) != 1 or
+                len(last_order.opens) != 1):
+                return False
+        else:
+            return False
+        
+        # Validate time constraints
+        first_time = chain[0].created_at
+        last_time = chain[-1].created_at
+        if (last_time - first_time) > self.max_chain_duration:
+            return False
+        
+        return True
+    
+    def get_chain_analysis(self, chain: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Analyze a detected chain and return summary information"""
+        
+        if not chain:
+            return {}
+        
+        try:
+            # For simple chains, work directly with raw orders
+            first_order = chain[0]
+            last_order = chain[-1]
+            
+            # Generate a unique chain ID
+            chain_id = first_order.get('id', '') or f"chain_{hash(str(chain))}"
+            
+            # Get basic information - use correct field name from actual data
+            underlying_symbol = first_order.get('chain_symbol', '') or first_order.get('underlying_symbol', '')
+            if not underlying_symbol:
+                logger.warning(f"No symbol found in order: {list(first_order.keys())}")
+                return {}
+            
+            # Determine chain type from strategy or form_source
+            strategy = first_order.get('strategy', '').lower()
+            form_source = first_order.get('form_source', '').lower()
+            
+            if 'call' in strategy:
+                chain_type = 'call_roll'
+            elif 'put' in strategy:
+                chain_type = 'put_roll'
+            elif form_source == 'strategy_roll':
+                chain_type = 'strategy_roll'
+            else:
+                chain_type = 'unknown_roll'
+            
+            # Assume active status for rolled options
+            status = 'active'
+            
+            # Get dates
+            start_date = first_order.get('created_at', '')
+            last_activity_date = last_order.get('created_at', '')
+            
+            # Calculate basic financial metrics
+            total_credits = 0.0
+            total_debits = 0.0
+            net_premium = 0.0
+            
+            for order in chain:
+                # Try to get premium information
+                direction = order.get('direction', '')
+                premium = 0.0
+                
+                # Try different premium fields
+                if order.get('processed_premium'):
+                    premium = float(order.get('processed_premium', 0))
+                elif order.get('premium'):
+                    premium = float(order.get('premium', 0))
+                elif order.get('price'):
+                    premium = float(order.get('price', 0))
+                
+                if direction == 'credit':
+                    total_credits += premium
+                elif direction == 'debit':
+                    total_debits += premium
+                else:
+                    # Default to credit for roll orders
+                    total_credits += abs(premium)
+            
+            net_premium = total_credits - total_debits
+            
+            # Get initial strategy name
+            initial_strategy = strategy or 'rolled_option'
+            
+            # Sort orders by created_at (newest first for display)
+            try:
+                sorted_chain = sorted(chain, key=lambda x: x.get('created_at', ''), reverse=True)
+            except:
+                sorted_chain = chain  # Fallback to original order if sorting fails
+            
+            # Process orders to extract key display information
+            processed_orders = []
+            for i, order in enumerate(sorted_chain):
+                # Get basic order info
+                processed_premium = float(order.get('processed_premium', 0) or 0)
+                quantity = float(order.get('quantity', 0) or 0)
+                
+                # Calculate per-contract price
+                price_per_contract = processed_premium / quantity if quantity > 0 else 0.0
+                
+                # Get legs info to extract strike, expiration, and side for order-level display
+                legs = order.get('legs', [])
+                primary_strike = None
+                primary_expiration = None
+                primary_option_type = None
+                primary_side = None
+                primary_position_effect = None
+                
+                if legs:
+                    # Analyze legs to determine proper display info
+                    opens = [leg for leg in legs if leg.get('position_effect') == 'open']
+                    closes = [leg for leg in legs if leg.get('position_effect') == 'close']
+                    
+                    # Determine position effect based on leg analysis
+                    if opens and closes:
+                        primary_position_effect = 'roll'  # Both open and close = roll transaction
+                        # For display, use the open leg (new position) as primary
+                        primary_leg = opens[0]
+                    elif opens:
+                        primary_position_effect = 'open'  # Only opens = opening transaction
+                        primary_leg = opens[0]
+                    elif closes:
+                        primary_position_effect = 'close'  # Only closes = closing transaction
+                        primary_leg = closes[0]
+                    else:
+                        primary_leg = legs[0]  # Fallback to first leg
+                        primary_position_effect = primary_leg.get('position_effect', '')
+                    
+                    # Use the primary leg for display info
+                    primary_strike = float(primary_leg.get('strike_price', 0) or 0)
+                    primary_expiration = primary_leg.get('expiration_date', '')
+                    primary_option_type = primary_leg.get('option_type', '')
+                    primary_side = primary_leg.get('side', '')  # buy/sell
+                
+                order_info = {
+                    'order_id': order.get('id', ''),
+                    'created_at': order.get('created_at', ''),
+                    'state': order.get('state', ''),
+                    'strategy': order.get('strategy', ''),
+                    'form_source': order.get('form_source', ''),
+                    'direction': order.get('direction', ''),
+                    'processed_premium': processed_premium,
+                    'price': price_per_contract,  # Per-contract price
+                    'premium': processed_premium,  # Total premium (alias)
+                    'quantity': quantity,
+                    'strike_price': primary_strike,  # Primary strike for order display
+                    'expiration_date': primary_expiration,  # Primary expiration for order display
+                    'option_type': primary_option_type,  # Primary option type for position display
+                    'side': primary_side,  # Primary side (buy/sell) for display
+                    'position_effect': primary_position_effect,  # Primary position effect (open/close)
+                    'underlying_symbol': underlying_symbol,  # Use the correctly extracted symbol
+                    'legs': []
+                }
+                
+                # Process legs to extract options details and add roll transaction details
+                legs = order.get('legs', [])
+                roll_details = None
+                
+                # If this is a roll transaction, create detailed roll information
+                if len(legs) > 1:
+                    closes = [leg for leg in legs if leg.get('position_effect') == 'close']
+                    opens = [leg for leg in legs if leg.get('position_effect') == 'open']
+                    
+                    if closes and opens:
+                        roll_details = {
+                            'type': 'roll',
+                            'close_position': {
+                                'strike_price': float(closes[0].get('strike_price', 0) or 0),
+                                'option_type': closes[0].get('option_type', '').upper(),
+                                'expiration_date': closes[0].get('expiration_date', ''),
+                                'side': closes[0].get('side', '').lower()
+                            },
+                            'open_position': {
+                                'strike_price': float(opens[0].get('strike_price', 0) or 0),
+                                'option_type': opens[0].get('option_type', '').upper(),
+                                'expiration_date': opens[0].get('expiration_date', ''),
+                                'side': opens[0].get('side', '').lower()
+                            }
+                        }
+                
+                # Add roll details to order info
+                if roll_details:
+                    order_info['roll_details'] = roll_details
+                
+                # Process all legs for completeness
+                for leg in legs:
+                    leg_info = {
+                        'strike_price': float(leg.get('strike_price', 0) or 0),
+                        'option_type': leg.get('option_type', ''),
+                        'expiration_date': leg.get('expiration_date', ''),
+                        'side': leg.get('side', ''),
+                        'position_effect': leg.get('position_effect', ''),
+                        'quantity': float(leg.get('quantity', 0) or 0)
+                    }
+                    order_info['legs'].append(leg_info)
+                
+                processed_orders.append(order_info)
+            
+            # Calculate latest position from the most recent order
+            latest_position = self._calculate_latest_position(chain)
+            
+            return {
+                'chain_id': chain_id,
+                'underlying_symbol': underlying_symbol,
+                'chain_type': chain_type,
+                'status': status,
+                'start_date': start_date,
+                'last_activity_date': last_activity_date,
+                'total_orders': len(chain),
+                'roll_count': max(0, len(chain) - 1),
+                'total_credits_collected': total_credits,
+                'total_debits_paid': total_debits,
+                'net_premium': net_premium,
+                'total_pnl': net_premium,  # For now, P&L equals net premium
+                'initial_strategy': initial_strategy,
+                'latest_position': latest_position,
+                'orders': processed_orders  # Use processed orders instead of raw chain
+            }
+            
+        except Exception as e:
+            logger.error(f"Error analyzing chain: {e}", exc_info=True)
+            # Return a minimal valid analysis instead of empty dict
+            return {
+                'chain_id': f"chain_{hash(str(chain))}",
+                'underlying_symbol': chain[0].get('underlying_symbol', 'UNKNOWN') if chain else 'UNKNOWN',
+                'chain_type': 'roll',
+                'status': 'active',
+                'start_date': chain[0].get('created_at', '') if chain else '',
+                'last_activity_date': chain[-1].get('created_at', '') if chain else '',
+                'total_orders': len(chain),
+                'roll_count': max(0, len(chain) - 1),
+                'total_credits_collected': 0.0,
+                'total_debits_paid': 0.0,
+                'net_premium': 0.0,
+                'total_pnl': 0.0,
+                'initial_strategy': 'roll',
+                'orders': chain
+            }
+    
+    def _get_strategy_name(self, order_info: OrderInfo) -> str:
+        """Get strategy name for an order"""
+        
+        if len(order_info.legs) == 1:
+            leg = order_info.legs[0]
+            if leg.position_effect == 'open':
+                if leg.side == 'sell':
+                    return f"short_{leg.option_type}"
+                else:
+                    return f"long_{leg.option_type}"
+        
+        return "unknown"
+    
+    def _calculate_latest_position(self, chain: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Calculate the current open position from the most recent order in the chain"""
+        try:
+            if not chain:
+                logger.warning("Empty chain passed to _calculate_latest_position")
+                return None
+            
+            # Sort orders chronologically (newest last) 
+            sorted_chain = sorted(chain, key=lambda x: x.get('created_at', ''))
+            most_recent_order = sorted_chain[-1]
+            
+            # Find the open legs in the most recent order
+            legs = most_recent_order.get('legs', [])
+            
+            # Look for legs with 'open' position effect in the legs array
+            open_legs = [leg for leg in legs if leg.get('position_effect') == 'open']
+            
+            # If no open legs found in legs array, but the order has roll_details, extract from open_position
+            if not open_legs and 'roll_details' in most_recent_order:
+                roll_details = most_recent_order['roll_details']
+                if roll_details.get('type') == 'roll' and 'open_position' in roll_details:
+                    open_position = roll_details['open_position']
+                    
+                    # Create a synthetic leg from roll details
+                    synthetic_open_leg = {
+                        'strike_price': open_position.get('strike_price'),
+                        'option_type': open_position.get('option_type', '').lower(),
+                        'expiration_date': open_position.get('expiration_date'),
+                        'side': open_position.get('side', '').lower(),
+                        'position_effect': 'open'
+                    }
+                    open_legs = [synthetic_open_leg]
+            
+            if not open_legs:
+                # If no open legs in the most recent order, search backward through the chain
+                for i in range(len(sorted_chain) - 2, -1, -1):
+                    order = sorted_chain[i]
+                    order_legs = order.get('legs', [])
+                    order_open_legs = [leg for leg in order_legs if leg.get('position_effect') == 'open']
+                    
+                    # Also check roll_details for earlier orders
+                    if not order_open_legs and 'roll_details' in order:
+                        order_roll_details = order['roll_details']
+                        if order_roll_details.get('type') == 'roll' and 'open_position' in order_roll_details:
+                            open_position = order_roll_details['open_position']
+                            synthetic_open_leg = {
+                                'strike_price': open_position.get('strike_price'),
+                                'option_type': open_position.get('option_type', '').lower(),
+                                'expiration_date': open_position.get('expiration_date'),
+                                'side': open_position.get('side', '').lower(),
+                                'position_effect': 'open'
+                            }
+                            order_open_legs = [synthetic_open_leg]
+                    
+                    if order_open_legs:
+                        open_leg = order_open_legs[0]
+                        break
+                else:
+                    return None
+            else:
+                # Use the first open leg as the latest position
+                open_leg = open_legs[0]
+            
+            latest_position = {
+                'strike_price': float(open_leg.get('strike_price', 0) or 0),
+                'option_type': open_leg.get('option_type', '').upper(),
+                'expiration_date': open_leg.get('expiration_date', ''),
+                'side': open_leg.get('side', '').lower(),  # buy = long, sell = short
+                'quantity': float(most_recent_order.get('quantity', 0) or 0),
+                'last_updated': most_recent_order.get('created_at', '')
+            }
+            
+            logger.debug(f"Calculated latest position: {latest_position}")
+            return latest_position
+            
+        except Exception as e:
+            logger.error(f"Error calculating latest position: {e}", exc_info=True)
+            return None
+    
+    def _create_simple_chains_from_rolls(self, orders: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+        """Create proper roll chains by validating roll sequences"""
+        chains = []
+        
+        # Find all roll orders using correct field names
+        roll_orders = []
+        for order in orders:
+            form_source = order.get('form_source', '').lower()
+            strategy = order.get('strategy', '').lower()
+            
+            if (form_source == 'strategy_roll' or 'calendar_spread' in strategy):
+                roll_orders.append(order)
+        
+        logger.info(f"Creating proper roll chains from {len(roll_orders)} roll orders")
+        
+        # Group by symbol AND option type to prevent mixing calls and puts
+        symbol_type_orders = {}
+        for order in roll_orders:
+            symbol = order.get('chain_symbol', '') or order.get('underlying_symbol', '')
+            if not symbol:
+                continue
+                
+            # Get primary option type from first leg
+            legs = order.get('legs', [])
+            if not legs:
+                continue
+                
+            primary_option_type = legs[0].get('option_type', '').lower()
+            if primary_option_type not in ['call', 'put']:
+                continue
+            
+            group_key = f"{symbol}_{primary_option_type}"
+            if group_key not in symbol_type_orders:
+                symbol_type_orders[group_key] = []
+            symbol_type_orders[group_key].append(order)
+        
+        logger.info(f"Grouped into {len(symbol_type_orders)} symbol+type combinations")
+        
+        # Create proper roll chains for each symbol+type group
+        total_chains = 0
+        for group_key, group_orders in symbol_type_orders.items():
+            symbol, option_type = group_key.split('_', 1)
+            
+            # Sort by time
+            group_orders.sort(key=lambda x: x.get('created_at', ''))
+            
+            # Build chains by analyzing position effects and ensuring proper roll sequences
+            group_chains = self._build_proper_roll_chains(group_orders, symbol, option_type)
+            chains.extend(group_chains)
+            total_chains += len(group_chains)
+            
+            logger.info(f"Found {len(group_chains)} proper chains for {group_key}")
+            
+            # Limit total chains to prevent performance issues
+            if total_chains >= 50:
+                break
+        
+        logger.info(f"Created {len(chains)} proper roll chains with validated roll sequences")
+        return chains
+    
+    def _build_proper_roll_chains(self, orders: List[Dict[str, Any]], symbol: str, option_type: str) -> List[List[Dict[str, Any]]]:
+        """Build chains by validating proper roll sequences (open -> roll -> close)"""
+        chains = []
+        used_orders = set()
+        
+        # Analyze each order to understand its position effects
+        order_analyses = []
+        for order in orders:
+            analysis = self._analyze_order_position_effects(order)
+            if analysis:
+                order_analyses.append(analysis)
+        
+        # Find potential chain starts (orders that open new positions WITHOUT closing any)
+        chain_starts = []
+        orders_with_opens = 0
+        orders_with_closes = 0
+        orders_with_both = 0
+        
+        for analysis in order_analyses:
+            if analysis['opens']:
+                orders_with_opens += 1
+            if analysis['closes']:
+                orders_with_closes += 1
+            if analysis['opens'] and analysis['closes']:
+                orders_with_both += 1
+                
+            # A valid chain start MUST have opens and NO closes (pure opening order)
+            if (analysis['opens'] and 
+                not analysis['closes'] and 
+                analysis['order_id'] not in used_orders):
+                chain_starts.append(analysis)
+                logger.info(f"Valid chain start found: {analysis['order_id']} - {len(analysis['opens'])} opens, {len(analysis['closes'])} closes")
+        
+        logger.info(f"Analysis for {symbol}_{option_type}: {len(order_analyses)} total orders, {orders_with_opens} with opens, {orders_with_closes} with closes, {orders_with_both} with both")
+        logger.info(f"Found {len(chain_starts)} potential chain starts for {symbol}_{option_type}")
+        
+        # Track which starts came from backward tracing for validation purposes
+        backward_traced_starts = []
+        
+        # If no chain starts found but we have roll orders, trace backwards to find original openings
+        if len(chain_starts) == 0 and orders_with_both > 0:
+            logger.info(f"No pure opening orders found in current window for {symbol}_{option_type}, tracing backwards from roll orders")
+            backward_traced_starts = self._trace_backwards_for_chain_starts(order_analyses, symbol, option_type)
+            chain_starts.extend(backward_traced_starts)
+            logger.info(f"Found {len(backward_traced_starts)} chain starts via backward tracing for {symbol}_{option_type}")
+        
+        # Build chains from each start
+        for start_analysis in chain_starts:
+            if start_analysis['order_id'] in used_orders:
+                continue
+            
+            chain = self._build_chain_from_start_analysis(start_analysis, order_analyses, used_orders)
+            
+            # Validate the chain follows proper roll patterns
+            # Allow partial chains when starting from roll orders (backward traced)
+            is_backward_traced = start_analysis in backward_traced_starts
+            
+            if chain and (self._validate_roll_chain(chain) or 
+                         (is_backward_traced and self._validate_partial_roll_chain(chain))):
+                raw_chain = [analysis['raw_order'] for analysis in chain]
+                chains.append(raw_chain)
+                
+                # Mark orders as used
+                for analysis in chain:
+                    used_orders.add(analysis['order_id'])
+                
+                chain_type = "partial" if is_backward_traced else "complete"
+                logger.info(f"Valid {chain_type} roll chain found with {len(chain)} orders for {symbol}_{option_type}")
+        
+        return chains
+    
+    def _trace_backwards_for_chain_starts(self, current_analyses: List[Dict[str, Any]], symbol: str, option_type: str) -> List[Dict[str, Any]]:
+        """Trace backwards from roll orders to find original opening orders"""
+        try:
+            # Get all roll orders that have both opens and closes
+            roll_orders = [analysis for analysis in current_analyses if analysis['opens'] and analysis['closes']]
+            
+            if not roll_orders:
+                return []
+            
+            logger.info(f"Found {len(roll_orders)} roll orders for backward tracing in {symbol}_{option_type}")
+            
+            # Load all available orders for this symbol to search for opening orders
+            all_orders = self._load_all_orders_for_symbol(symbol)
+            if not all_orders:
+                logger.warning(f"No orders found for symbol {symbol} in backward tracing")
+                return self._fallback_to_earliest_rolls(roll_orders, symbol, option_type)
+            
+            logger.info(f"Loaded {len(all_orders)} total orders for {symbol} to search for opening orders")
+            
+            # Find matching opening orders for each roll order's close legs
+            found_opening_orders = []
+            
+            for roll_analysis in roll_orders:
+                for close_leg in roll_analysis['closes']:
+                    # Search for matching single-leg opening order
+                    matching_opening_order = self._find_matching_opening_order(
+                        all_orders,
+                        symbol=symbol,
+                        option_type=close_leg['option_type'],
+                        strike_price=close_leg['strike_price'],
+                        expiration_date=close_leg['expiration_date']
+                    )
+                    
+                    if matching_opening_order:
+                        # Analyze the found opening order
+                        opening_analysis = self._analyze_order_position_effects(matching_opening_order)
+                        if opening_analysis and opening_analysis not in found_opening_orders:
+                            found_opening_orders.append(opening_analysis)
+                            logger.info(f"Found matching opening order for {symbol} ${close_leg['strike_price']} {close_leg['option_type']} {close_leg['expiration_date']}")
+            
+            if found_opening_orders:
+                logger.info(f"Found {len(found_opening_orders)} original opening orders for {symbol}_{option_type}")
+                return found_opening_orders
+            else:
+                logger.info(f"No matching opening orders found for {symbol}_{option_type}, falling back to earliest rolls")
+                return self._fallback_to_earliest_rolls(roll_orders, symbol, option_type)
+            
+        except Exception as e:
+            logger.error(f"Error tracing backwards for {symbol}_{option_type}: {e}")
+            return []
+    
+    def _load_all_orders_for_symbol(self, symbol: str) -> List[Dict[str, Any]]:
+        """Load all available orders for a specific symbol to search for opening orders"""
+        try:
+            # In the current implementation, we need to load from the same data source 
+            # used by the chain detector. Since detect_chains() receives a list of orders,
+            # we need to access that same data source.
+            
+            # For this implementation, we'll search through the cached data or 
+            # available order data from debug files
+            import glob
+            import json
+            from pathlib import Path
+            
+            # Load from debug data files (same as JsonRolledOptionsService)
+            debug_data_dir = Path(__file__).parent.parent.parent / "debug_data"
+            options_files = list(debug_data_dir.glob("*options_orders*.json"))
+            
+            all_orders = []
+            
+            # Load from up to 10 most recent files to balance completeness vs performance
+            for file_path in sorted(options_files, reverse=True)[:10]:
+                try:
+                    with open(file_path, 'r') as f:
+                        orders = json.load(f)
+                        
+                    # Filter for the specific symbol
+                    symbol_orders = [
+                        order for order in orders 
+                        if (order.get('chain_symbol', '').upper() == symbol.upper() or 
+                            order.get('underlying_symbol', '').upper() == symbol.upper())
+                    ]
+                    
+                    all_orders.extend(symbol_orders)
+                    
+                except Exception as e:
+                    logger.debug(f"Error loading {file_path}: {e}")
+                    continue
+            
+            # Remove duplicates based on order ID
+            seen_ids = set()
+            unique_orders = []
+            for order in all_orders:
+                order_id = order.get('id')
+                if order_id and order_id not in seen_ids:
+                    seen_ids.add(order_id)
+                    unique_orders.append(order)
+            
+            logger.info(f"Loaded {len(unique_orders)} unique orders for symbol {symbol}")
+            return unique_orders
+            
+        except Exception as e:
+            logger.error(f"Error loading orders for symbol {symbol}: {e}")
+            return []
+    
+    def _find_matching_opening_order(
+        self, 
+        all_orders: List[Dict[str, Any]], 
+        symbol: str, 
+        option_type: str, 
+        strike_price: float, 
+        expiration_date: str
+    ) -> Optional[Dict[str, Any]]:
+        """Find a single-leg opening order that matches the specified criteria"""
+        try:
+            for order in all_orders:
+                # Must be same symbol
+                order_symbol = order.get('chain_symbol', '') or order.get('underlying_symbol', '')
+                if order_symbol.upper() != symbol.upper():
+                    continue
+                
+                # Must be filled (not cancelled)
+                if order.get('state') != 'filled':
+                    continue
+                
+                # Must be single leg (not a roll order)
+                legs = order.get('legs', [])
+                if len(legs) != 1:
+                    continue
+                
+                leg = legs[0]
+                
+                # Must match all criteria exactly
+                if (leg.get('option_type', '').lower() == option_type.lower() and
+                    float(leg.get('strike_price', 0) or 0) == float(strike_price) and
+                    leg.get('expiration_date') == expiration_date and
+                    leg.get('position_effect') == 'open'):
+                    
+                    logger.debug(f"Found matching opening order: {order.get('id')} - ${strike_price} {option_type} {expiration_date}")
+                    return order
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error finding matching opening order: {e}")
+            return None
+    
+    def _fallback_to_earliest_rolls(self, roll_orders: List[Dict[str, Any]], symbol: str, option_type: str) -> List[Dict[str, Any]]:
+        """Fallback to using earliest roll orders as chain starts when no opening orders found"""
+        # Sort roll orders by time to find the earliest ones
+        roll_orders.sort(key=lambda x: x['created_at'])
+        
+        # Take up to 5 earliest rolls as fallback chain starts
+        earliest_rolls = roll_orders[:min(5, len(roll_orders))]
+        
+        logger.info(f"Using {len(earliest_rolls)} earliest roll orders as fallback chain starts for {symbol}_{option_type}")
+        return earliest_rolls
+    
+    def _validate_partial_roll_chain(self, chain: List[Dict[str, Any]]) -> bool:
+        """Validate a partial chain that starts with a roll order (missing original opening)"""
+        try:
+            if len(chain) < 1:
+                return False
+            
+            # For partial chains, we relax the requirement that the first order must be pure opening
+            # Instead, we validate that the chain has proper sequence from where we can see
+            
+            first_order = chain[0]
+            
+            # First order in partial chain can have both opens and closes (it's a roll order)
+            if not first_order['opens']:
+                logger.debug("Partial chain validation failed: first order has no opens")
+                return False
+            
+            # Validate the rest of the chain follows proper patterns
+            current_open_positions = first_order['opens'].copy()
+            
+            for i, order_analysis in enumerate(chain[1:], 1):
+                # Each subsequent order should properly continue the chain
+                for close_leg in order_analysis['closes']:
+                    found_match = False
+                    for j, open_pos in enumerate(current_open_positions):
+                        if self._positions_match_strictly(open_pos, close_leg):
+                            current_open_positions.pop(j)
+                            found_match = True
+                            break
+                    
+                    if not found_match:
+                        logger.debug(f"Partial chain validation failed at order {i}: close doesn't match open position")
+                        return False
+                
+                # Add new opens
+                current_open_positions.extend(order_analysis['opens'])
+            
+            logger.debug(f"Partial chain validation passed for {len(chain)} orders")
+            return True
+            
+        except Exception as e:
+            logger.debug(f"Error validating partial chain: {e}")
+            return False
+    
+    def _analyze_order_position_effects(self, order: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Analyze an order to understand its position effects with detailed validation"""
+        try:
+            legs = order.get('legs', [])
+            if not legs:
+                return None
+            
+            opens = []  # Positions being opened
+            closes = []  # Positions being closed
+            order_quantity = float(order.get('quantity', 0) or 0)
+            
+            for leg in legs:
+                position_effect = leg.get('position_effect', '').lower()
+                side = leg.get('side', '').lower()
+                strike_price = float(leg.get('strike_price', 0) or 0)
+                option_type = leg.get('option_type', '').lower()
+                expiration_date = leg.get('expiration_date', '')
+                leg_quantity = float(leg.get('quantity', order_quantity) or order_quantity)
+                
+                # Validate required fields
+                if not all([position_effect, side, strike_price, option_type, expiration_date]):
+                    logger.debug(f"Order {order.get('id')} leg missing required fields")
+                    continue
+                
+                if position_effect not in ['open', 'close']:
+                    logger.debug(f"Order {order.get('id')} invalid position_effect: {position_effect}")
+                    continue
+                
+                if side not in ['buy', 'sell']:
+                    logger.debug(f"Order {order.get('id')} invalid side: {side}")
+                    continue
+                
+                if option_type not in ['call', 'put']:
+                    logger.debug(f"Order {order.get('id')} invalid option_type: {option_type}")
+                    continue
+                
+                leg_info = {
+                    'strike_price': strike_price,
+                    'option_type': option_type,
+                    'expiration_date': expiration_date,
+                    'side': side,
+                    'position_effect': position_effect,
+                    'quantity': leg_quantity
+                }
+                
+                if position_effect == 'open':
+                    opens.append(leg_info)
+                elif position_effect == 'close':
+                    closes.append(leg_info)
+            
+            # Validate that the order has valid legs
+            if not opens and not closes:
+                logger.debug(f"Order {order.get('id')} has no valid legs")
+                return None
+            
+            analysis = {
+                'order_id': order.get('id'),
+                'created_at': order.get('created_at'),
+                'opens': opens,
+                'closes': closes,
+                'raw_order': order
+            }
+            
+            logger.debug(f"Analyzed order {order.get('id')}: {len(opens)} opens, {len(closes)} closes")
+            return analysis
+            
+        except Exception as e:
+            logger.debug(f"Error analyzing order {order.get('id')}: {e}")
+            return None
+    
+    def _build_chain_from_start_analysis(
+        self, 
+        start_analysis: Dict[str, Any], 
+        all_analyses: List[Dict[str, Any]], 
+        used_orders: set
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Build a chain starting from an opening order with strict position tracking"""
+        
+        chain = [start_analysis]
+        # Track open positions with detailed information including quantities
+        current_open_positions = []
+        for open_pos in start_analysis['opens']:
+            position_info = {
+                'strike_price': open_pos['strike_price'],
+                'option_type': open_pos['option_type'],
+                'expiration_date': open_pos['expiration_date'],
+                'side': open_pos['side'],
+                'quantity': open_pos.get('quantity', 0),
+                'opened_by': start_analysis['order_id']
+            }
+            current_open_positions.append(position_info)
+        
+        logger.debug(f"Starting chain with {len(current_open_positions)} open positions from order {start_analysis['order_id']}")
+        
+        # Find subsequent orders that continue this chain
+        remaining_analyses = [
+            analysis for analysis in all_analyses 
+            if (analysis['order_id'] not in used_orders and 
+                analysis['order_id'] != start_analysis['order_id'] and
+                analysis['created_at'] > start_analysis['created_at'])
+        ]
+        
+        # Sort by time
+        remaining_analyses.sort(key=lambda x: x['created_at'])
+        
+        max_iterations = 10  # Prevent infinite loops
+        iteration = 0
+        
+        while current_open_positions and remaining_analyses and iteration < max_iterations:
+            iteration += 1
+            
+            # Find the next order that properly closes one of our open positions
+            next_order = None
+            for analysis in remaining_analyses:
+                if self._order_properly_closes_positions(analysis, current_open_positions):
+                    next_order = analysis
+                    break
+            
+            if not next_order:
+                logger.debug(f"No valid continuation found for chain at iteration {iteration}")
+                break
+            
+            logger.debug(f"Adding order {next_order['order_id']} to chain (iteration {iteration})")
+            
+            # Add this order to the chain
+            chain.append(next_order)
+            remaining_analyses.remove(next_order)
+            
+            # Update current open positions with strict tracking
+            updated_positions = self._update_open_positions(current_open_positions, next_order)
+            if updated_positions is None:
+                logger.debug(f"Position update failed for order {next_order['order_id']}, breaking chain")
+                break
+            
+            current_open_positions = updated_positions
+            logger.debug(f"After order {next_order['order_id']}: {len(current_open_positions)} open positions remain")
+        
+        # Validate the final chain structure
+        if len(chain) >= 2 and self._validate_chain_position_flow(chain):
+            return chain
+        
+        logger.debug(f"Chain validation failed: length={len(chain)}, valid_flow={self._validate_chain_position_flow(chain) if len(chain) >= 2 else False}")
+        return None
+    
+    def _order_properly_closes_positions(self, order_analysis: Dict[str, Any], open_positions: List[Dict[str, Any]]) -> bool:
+        """Check if an order properly closes positions with quantity and detail validation"""
+        if not order_analysis['closes']:
+            return False
+        
+        # Check that all closes in this order match open positions
+        for close_leg in order_analysis['closes']:
+            found_match = False
+            for open_pos in open_positions:
+                if self._positions_match_strictly(open_pos, close_leg):
+                    found_match = True
+                    break
+            
+            if not found_match:
+                logger.debug(f"Close leg {close_leg['strike_price']} {close_leg['option_type']} {close_leg['expiration_date']} doesn't match any open position")
+                return False
+        
+        return True
+    
+    def _update_open_positions(self, current_positions: List[Dict[str, Any]], order_analysis: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
+        """Update open positions after processing an order, with strict validation"""
+        try:
+            updated_positions = current_positions.copy()
+            
+            # Process closes first - remove positions that are being closed
+            for close_leg in order_analysis['closes']:
+                position_to_remove = None
+                for open_pos in updated_positions:
+                    if self._positions_match_strictly(open_pos, close_leg):
+                        position_to_remove = open_pos
+                        break
+                
+                if position_to_remove:
+                    updated_positions.remove(position_to_remove)
+                    logger.debug(f"Closed position: {close_leg['strike_price']} {close_leg['option_type']} {close_leg['expiration_date']}")
+                else:
+                    logger.debug(f"Cannot close position - no matching open position for {close_leg['strike_price']} {close_leg['option_type']}")
+                    return None  # Invalid - trying to close position that wasn't opened
+            
+            # Process opens - add new positions
+            for open_leg in order_analysis['opens']:
+                new_position = {
+                    'strike_price': open_leg['strike_price'],
+                    'option_type': open_leg['option_type'],
+                    'expiration_date': open_leg['expiration_date'],
+                    'side': open_leg['side'],
+                    'quantity': open_leg.get('quantity', 0),
+                    'opened_by': order_analysis['order_id']
+                }
+                updated_positions.append(new_position)
+                logger.debug(f"Opened new position: {open_leg['strike_price']} {open_leg['option_type']} {open_leg['expiration_date']}")
+            
+            return updated_positions
+            
+        except Exception as e:
+            logger.debug(f"Error updating positions: {e}")
+            return None
+    
+    def _positions_match_strictly(self, open_pos: Dict[str, Any], close_leg: Dict[str, Any]) -> bool:
+        """Strict position matching including quantity validation"""
+        return (
+            open_pos['strike_price'] == close_leg['strike_price'] and
+            open_pos['option_type'] == close_leg['option_type'] and
+            open_pos['expiration_date'] == close_leg['expiration_date'] and
+            open_pos['side'] != close_leg['side']  # Must be opposite sides
+        )
+    
+    def _validate_chain_position_flow(self, chain: List[Dict[str, Any]]) -> bool:
+        """Validate that the entire chain has proper position flow"""
+        try:
+            # Start with the first order's opens
+            open_positions = []
+            for open_leg in chain[0]['opens']:
+                position_info = {
+                    'strike_price': open_leg['strike_price'],
+                    'option_type': open_leg['option_type'],
+                    'expiration_date': open_leg['expiration_date'],
+                    'side': open_leg['side']
+                }
+                open_positions.append(position_info)
+            
+            # Process each subsequent order
+            for i, order_analysis in enumerate(chain[1:], 1):
+                # Validate that all closes match open positions
+                for close_leg in order_analysis['closes']:
+                    found_match = False
+                    for j, open_pos in enumerate(open_positions):
+                        if self._positions_match_strictly(open_pos, close_leg):
+                            open_positions.pop(j)  # Remove the closed position
+                            found_match = True
+                            break
+                    
+                    if not found_match:
+                        logger.debug(f"Chain validation failed at order {i}: close doesn't match open position")
+                        return False
+                
+                # Add new opens
+                for open_leg in order_analysis['opens']:
+                    position_info = {
+                        'strike_price': open_leg['strike_price'],
+                        'option_type': open_leg['option_type'],
+                        'expiration_date': open_leg['expiration_date'],
+                        'side': open_leg['side']
+                    }
+                    open_positions.append(position_info)
+            
+            # Valid chain can end with open positions (active chain) or no open positions (closed chain)
+            return True
+            
+        except Exception as e:
+            logger.debug(f"Error validating chain position flow: {e}")
+            return False
+    
+    def _order_closes_position(self, order_analysis: Dict[str, Any], open_positions: List[Dict[str, Any]]) -> bool:
+        """Legacy method - replaced by _order_properly_closes_positions"""
+        return self._order_properly_closes_positions(order_analysis, open_positions)
+    
+    def _positions_match(self, open_pos: Dict[str, Any], close_leg: Dict[str, Any]) -> bool:
+        """Check if a close leg matches an open position"""
+        return (
+            open_pos['strike_price'] == close_leg['strike_price'] and
+            open_pos['option_type'] == close_leg['option_type'] and
+            open_pos['expiration_date'] == close_leg['expiration_date'] and
+            open_pos['side'] != close_leg['side']  # Opposite sides (sell to open -> buy to close)
+        )
+    
+    def _validate_roll_chain(self, chain: List[Dict[str, Any]]) -> bool:
+        """Validate that a chain follows proper roll patterns"""
+        if len(chain) < 2:
+            return False
+        
+        # Check that we have proper open -> roll -> close pattern
+        first_order = chain[0]
+        last_order = chain[-1]
+        
+        # First order should have opens (starting positions)
+        if not first_order['opens']:
+            return False
+        
+        # Check that there's a logical progression through the chain
+        open_positions = first_order['opens'].copy()
+        
+        for i in range(1, len(chain)):
+            order = chain[i]
+            
+            # This order should close some positions and potentially open new ones
+            if not order['closes']:
+                # If no closes, this might be the end of chain but should not continue
+                continue
+            
+            # Verify that closes match some of our open positions
+            valid_closes = False
+            for close_leg in order['closes']:
+                for open_pos in open_positions:
+                    if self._positions_match(open_pos, close_leg):
+                        valid_closes = True
+                        break
+                if valid_closes:
+                    break
+            
+            if not valid_closes:
+                logger.debug(f"Chain validation failed: order {order['order_id']} doesn't close expected positions")
+                return False
+            
+            # Update open positions
+            for close_leg in order['closes']:
+                open_positions = [
+                    pos for pos in open_positions
+                    if not self._positions_match(pos, close_leg)
+                ]
+            
+            # Add new opens
+            open_positions.extend(order['opens'])
+        
+        # Chain is valid if we've properly tracked position changes
+        return True
