@@ -636,7 +636,7 @@ export default function Dashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabType>('portfolio')
-  const [showChains, setShowChains] = useState(false)
+  const [showChains, setShowChains] = useState(true)
   const [dashboardData, setDashboardData] = useState<DashboardData>({
     portfolio: null,
     stocks: null,
