@@ -144,6 +144,177 @@ cd frontend
 npm test
 ```
 
+## Troubleshooting
+
+### Frontend Development Issues
+
+#### Next.js Chunk Loading Errors (404 errors)
+If you encounter 404 errors for static chunks like:
+```
+GET /_next/static/chunks/main-app.js 404
+GET /_next/static/css/app/layout.css 404
+```
+
+**Quick Fix:**
+```bash
+cd frontend
+npm run dev:clean
+```
+
+**Complete Reset:**
+```bash
+cd frontend
+./dev-reset.sh
+```
+
+**Manual Cleanup:**
+```bash
+cd frontend
+# Stop all Next.js processes
+pkill -f "next dev" 2>/dev/null || true
+
+# Clear all caches
+rm -rf .next
+rm -rf node_modules/.cache
+rm -rf .turbo
+
+# Reinstall dependencies
+npm install
+
+# Start fresh
+npm run dev
+```
+
+#### Port Conflicts
+If you see "Port 3000 is in use" errors:
+```bash
+# Find and kill processes using port 3000
+lsof -ti:3000 | xargs kill -9
+
+# Or use a different port
+npm run dev -- -p 3001
+```
+
+#### Build Cache Issues
+If you experience build or compilation issues:
+```bash
+cd frontend
+# Clear all caches and node_modules
+rm -rf .next node_modules package-lock.json
+npm install
+npm run dev
+```
+
+### Backend Development Issues
+
+#### Database Connection Issues
+```bash
+cd backend
+# Check database status
+docker-compose ps
+
+# Restart database
+docker-compose restart postgres
+
+# Reset database (WARNING: This will delete all data)
+docker-compose down -v
+docker-compose up -d
+```
+
+#### API Endpoint Issues
+```bash
+# Check if backend is running
+curl http://localhost:8000/health
+
+# Check API documentation
+open http://localhost:8000/docs
+```
+
+#### Python Environment Issues
+```bash
+cd backend
+# Recreate virtual environment
+rm -rf venv
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### Docker Issues
+
+#### Container Won't Start
+```bash
+# Check container logs
+docker-compose logs
+
+# Rebuild containers
+docker-compose down
+docker-compose build --no-cache
+docker-compose up -d
+```
+
+#### Volume Issues
+```bash
+# Clear all volumes (WARNING: This will delete all data)
+docker-compose down -v
+docker volume prune -f
+docker-compose up -d
+```
+
+### Common Error Solutions
+
+#### "Module not found" errors
+```bash
+# Frontend
+cd frontend
+rm -rf node_modules package-lock.json
+npm install
+
+# Backend
+cd backend
+pip install -r requirements.txt
+```
+
+#### "Permission denied" errors
+```bash
+# Fix file permissions
+chmod +x frontend/dev-reset.sh
+chmod +x backend/scripts/*.sh  # if any scripts exist
+```
+
+#### "Port already in use" errors
+```bash
+# Find and kill processes
+lsof -ti:3000 | xargs kill -9  # Frontend
+lsof -ti:8000 | xargs kill -9  # Backend
+```
+
+### Development Scripts
+
+The project includes several helpful scripts for development:
+
+**Frontend Scripts:**
+- `npm run dev` - Start development server
+- `npm run dev:clean` - Clear cache and restart
+- `npm run dev:fresh` - Complete reset with dependency reinstall
+- `npm run dev:reset` - Reset with Turbo mode
+- `./dev-reset.sh` - Complete environment reset
+
+**Backend Scripts:**
+- `uvicorn app.main:app --reload` - Start development server
+- `pytest` - Run tests
+- `alembic upgrade head` - Apply database migrations
+
+### Getting Help
+
+If you're still experiencing issues:
+
+1. Check the logs: `docker-compose logs -f`
+2. Verify environment variables are set correctly
+3. Ensure all dependencies are installed
+4. Try the complete reset procedures above
+5. Check the [Issues](https://github.com/your-repo/issues) page for known problems
+
 ## Deployment
 
 The application can be deployed using Docker containers or on cloud platforms like Vercel (frontend) and Railway (backend).

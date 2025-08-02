@@ -18,6 +18,41 @@ const nextConfig = {
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
   },
+  // Enhanced webpack configuration for better development experience
+  webpack: (config, { dev, isServer }) => {
+    if (dev && !isServer) {
+      // Disable aggressive chunking in development
+      config.optimization = {
+        ...config.optimization,
+        splitChunks: {
+          chunks: 'all',
+          cacheGroups: {
+            default: {
+              minChunks: 1,
+              priority: -20,
+              reuseExistingChunk: true,
+            },
+            vendor: {
+              test: /[\\/]node_modules[\\/]/,
+              name: 'vendors',
+              priority: -10,
+              chunks: 'all',
+            },
+          },
+        },
+      };
+      
+      // Add better error handling for development
+      config.infrastructureLogging = {
+        level: 'error',
+      };
+    }
+    return config;
+  },
+  // Add better development server configuration
+  devIndicators: {
+    buildActivity: false,
+  },
   async redirects() {
     return [
       {

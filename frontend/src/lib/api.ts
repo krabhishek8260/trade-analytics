@@ -471,6 +471,53 @@ export async function getOptionsOrders(params?: {
   return response.data || []
 }
 
+// Closed Options History API
+export interface ClosedOptionsPosition {
+  underlying_symbol: string
+  chain_id: string
+  initial_strategy: string
+  start_date: string
+  close_date: string
+  total_orders: number
+  roll_count: number
+  total_credits_collected: number
+  total_debits_paid: number
+  net_premium: number
+  total_pnl: number
+  final_strike?: number
+  final_expiry?: string
+  final_option_type?: string
+  days_held?: number
+  win_loss: 'win' | 'loss'
+  enhanced_chain?: boolean
+  chain_type?: 'enhanced' | 'regular'
+}
+
+export async function getClosedOptionsHistory(params?: {
+  limit?: number
+  days_back?: number
+  underlying_symbol?: string
+  strategy?: string
+  option_type?: string
+  sort_by?: string
+  sort_order?: string
+  include_chains?: boolean
+}): Promise<ClosedOptionsPosition[]> {
+  const queryParams = new URLSearchParams()
+  if (params?.limit) queryParams.append('limit', params.limit.toString())
+  if (params?.days_back) queryParams.append('days_back', params.days_back.toString())
+  if (params?.underlying_symbol) queryParams.append('underlying_symbol', params.underlying_symbol)
+  if (params?.strategy) queryParams.append('strategy', params.strategy)
+  if (params?.option_type) queryParams.append('option_type', params.option_type)
+  if (params?.sort_by) queryParams.append('sort_by', params.sort_by)
+  if (params?.sort_order) queryParams.append('sort_order', params.sort_order)
+  if (params?.include_chains !== undefined) queryParams.append('include_chains', params.include_chains.toString())
+  
+  const url = `/api/v1/options/history${queryParams.toString() ? '?' + queryParams.toString() : ''}`
+  const response = await apiRequest<ListResponse<ClosedOptionsPosition>>(url)
+  return response.data || []
+}
+
 // Performance Analysis by Ticker
 export async function getTickerPerformance(symbol?: string): Promise<TickerPerformance[]> {
   const url = symbol ? `/options/analysis/${symbol}` : '/options/analysis/performance'

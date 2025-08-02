@@ -5,6 +5,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:clean": "rm -rf .next && npm run dev",
+    "dev:fresh": "rm -rf .next node_modules/.cache && npm install && npm run dev",
+    "dev:reset": "rm -rf .next node_modules/.cache && npm install && npm run dev -- --turbo",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

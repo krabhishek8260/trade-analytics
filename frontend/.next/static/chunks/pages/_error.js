@@ -21,7 +21,7 @@ eval(__webpack_require__.ts("\n    (window.__NEXT_P = window.__NEXT_P || []).pus
 },
 /******/ function(__webpack_require__) { // webpackRuntimeModules
 /******/ var __webpack_exec__ = function(moduleId) { return __webpack_require__(__webpack_require__.s = moduleId); }
-/******/ __webpack_require__.O(0, ["pages/_app","main"], function() { return __webpack_exec__("./node_modules/next/dist/build/webpack/loaders/next-client-pages-loader.js?absolutePagePath=next%2Fdist%2Fpages%2F_error&page=%2F_error!"); });
+/******/ __webpack_require__.O(0, ["pages/_app","vendors","main"], function() { return __webpack_exec__("./node_modules/next/dist/build/webpack/loaders/next-client-pages-loader.js?absolutePagePath=next%2Fdist%2Fpages%2F_error&page=%2F_error!"); });
 /******/ var __webpack_exports__ = __webpack_require__.O();
 /******/ _N_E = __webpack_exports__;
 /******/ }

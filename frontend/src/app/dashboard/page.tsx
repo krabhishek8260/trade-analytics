@@ -6,6 +6,7 @@ import { getDashboardData, checkAuthStatus, PortfolioSummary, StocksSummary, Opt
 import { AnalysisTab } from '@/components/analysis'
 import { InteractiveMetricCard } from '@/components/breakdown'
 import { RolledOptionsSection } from '@/components/RolledOptionsSection'
+import OptionsHistorySection from '@/components/OptionsHistorySection'
 
 interface DashboardData {
   portfolio: PortfolioSummary | null
@@ -627,6 +628,13 @@ function OptionsTab({ options, greeks, formatCurrency, formatPercent, onToggleCh
 
       {/* Rolled Options Section */}
       <RolledOptionsSection formatCurrency={formatCurrency} formatPercent={formatPercent} />
+
+      {/* Options History Section */}
+      <OptionsHistorySection 
+        formatCurrency={formatCurrency} 
+        formatPercent={formatPercent} 
+        onChainClick={onChainClick}
+      />
     </div>
   )
 }

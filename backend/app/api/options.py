@@ -911,3 +911,158 @@ async def force_pnl_recalculation(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error"
         )
+
+
+@router.get(
+    "/history",
+    response_model=ListResponse,
+    responses={
+        200: {"description": "Closed options history retrieved successfully"},
+        401: {"description": "Unauthorized", "model": ErrorResponse},
+        500: {"description": "Internal server error", "model": ErrorResponse}
+    }
+)
+async def get_closed_options_history(
+    limit: int = Query(50, ge=1, le=500, description="Number of closed positions to retrieve"),
+    days_back: Optional[int] = Query(365, description="Get closed positions from N days back"),
+    underlying_symbol: Optional[str] = Query(None, description="Filter by underlying symbol"),
+    strategy: Optional[str] = Query(None, description="Filter by strategy"),
+    option_type: Optional[str] = Query(None, regex="^(call|put)$", description="Filter by option type"),
+    sort_by: Optional[str] = Query("close_date", description="Sort by field"),
+    sort_order: str = Query("desc", regex="^(asc|desc)$", description="Sort order"),
+    include_chains: bool = Query(True, description="Include chain information for closed positions"),
+    rh_service: RobinhoodService = Depends(get_robinhood_service),
+    db = Depends(get_db)
+):
+    """Get closed options positions with chain information"""
+    try:
+        # Get closed options from enhanced rolled options service
+        from app.services.rolled_options_chain_detector import RolledOptionsChainDetector
+        
+        # Use the enhanced chain detector for better historical data
+        detector = RolledOptionsChainDetector()
+        
+        # Get all orders for the specified period
+        try:
+            since_time = datetime.now() - timedelta(days=days_back or 365)
+            orders_result = await rh_service.get_options_orders(limit=1000, since_time=since_time)
+            
+            if not orders_result.get("success", False):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=orders_result.get("message", "Failed to fetch options orders")
+                )
+            
+            orders = orders_result["data"]
+        except Exception as e:
+            # If not authenticated, return empty result
+            logger.warning(f"Options history endpoint error: {str(e)}")
+            return ListResponse(
+                data=[],
+                count=0,
+                total=0
+            )
+        
+        # Filter by symbol if specified
+        if underlying_symbol:
+            orders = [order for order in orders if order.get("underlying_symbol", "").upper() == underlying_symbol.upper()]
+        
+        # Use enhanced chain detection
+        chains_result = await detector.detect_chains(orders)
+        
+        if not chains_result.get("success", False):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=chains_result.get("message", "Failed to detect chains")
+            )
+        
+        chains = chains_result.get("chains", [])
+        
+        # Filter for closed chains only
+        closed_chains = [chain for chain in chains if chain.get("status") == "closed"]
+        
+        # Convert chains to closed positions format
+        closed_positions = []
+        for chain in closed_chains:
+            # Create a closed position entry from the chain
+            closed_position = {
+                "underlying_symbol": chain.get("underlying_symbol"),
+                "chain_id": chain.get("chain_id"),
+                "initial_strategy": chain.get("initial_strategy"),
+                "start_date": chain.get("start_date"),
+                "close_date": chain.get("last_activity_date"),
+                "total_orders": len(chain.get("orders", [])),
+                "roll_count": chain.get("roll_count", 0),
+                "total_credits_collected": chain.get("total_credits_collected", 0),
+                "total_debits_paid": chain.get("total_debits_paid", 0),
+                "net_premium": chain.get("net_premium", 0),
+                "total_pnl": chain.get("total_pnl", 0),
+                "final_strike": None,
+                "final_expiry": None,
+                "final_option_type": None,
+                "days_held": None,
+                "win_loss": "win" if chain.get("total_pnl", 0) > 0 else "loss",
+                "enhanced_chain": chain.get("enhanced", False),
+                "chain_type": chain.get("chain_type", "regular")
+            }
+            
+            # Get final position details from the last order
+            orders = chain.get("orders", [])
+            if orders:
+                last_order = orders[-1]
+                closed_position["final_strike"] = last_order.get("strike_price")
+                closed_position["final_expiry"] = last_order.get("expiration_date")
+                closed_position["final_option_type"] = last_order.get("option_type")
+            
+            # Calculate days held
+            if chain.get("start_date") and chain.get("last_activity_date"):
+                try:
+                    start_date = datetime.fromisoformat(chain["start_date"].replace("Z", "+00:00"))
+                    end_date = datetime.fromisoformat(chain["last_activity_date"].replace("Z", "+00:00"))
+                    closed_position["days_held"] = (end_date - start_date).days
+                except:
+                    pass
+            
+            closed_positions.append(closed_position)
+        
+        # Apply additional filters
+        if strategy:
+            closed_positions = [pos for pos in closed_positions if strategy.upper() in pos.get("initial_strategy", "").upper()]
+        
+        if option_type:
+            closed_positions = [pos for pos in closed_positions if pos.get("final_option_type", "").lower() == option_type.lower()]
+        
+        # Sort positions
+        reverse = sort_order == "desc"
+        valid_sort_fields = [
+            "underlying_symbol", "close_date", "start_date", "total_pnl", 
+            "net_premium", "total_orders", "roll_count", "days_held"
+        ]
+        
+        if sort_by in valid_sort_fields:
+            try:
+                closed_positions.sort(
+                    key=lambda x: x.get(sort_by, 0) if isinstance(x.get(sort_by, 0), (int, float)) else str(x.get(sort_by, "")),
+                    reverse=reverse
+                )
+            except Exception as e:
+                logger.warning(f"Error sorting closed positions by {sort_by}: {str(e)}")
+        
+        # Apply limit
+        if limit and len(closed_positions) > limit:
+            closed_positions = closed_positions[:limit]
+        
+        return ListResponse(
+            data=closed_positions,
+            count=len(closed_positions),
+            total=len(closed_positions)
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching closed options history: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
