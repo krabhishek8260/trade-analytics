@@ -59,6 +59,80 @@ class RolledOptionsChainDetector:
     def __init__(self):
         self.max_chain_duration = timedelta(days=240)  # 8 months
     
+    def _is_roll_order(self, order: Dict[str, Any]) -> bool:
+        """
+        Multi-criteria roll detection to handle orders with missing form_source
+        
+        Uses multiple indicators to identify roll orders:
+        1. Primary: form_source='strategy_roll' (Robinhood auto-roll)
+        2. Secondary: Strategy contains 'roll' or 'calendar_spread'
+        3. Tertiary: Multi-leg orders with both open and close position effects
+        4. Quaternary: Orders with rolled_from/rolled_to fields
+        
+        Args:
+            order: Order dictionary to analyze
+            
+        Returns:
+            True if order appears to be a roll transaction
+        """
+        try:
+            form_source = order.get('form_source', '').lower()
+            strategy = order.get('strategy', '').lower()
+            
+            # Primary: Confirmed roll by Robinhood
+            if form_source == 'strategy_roll':
+                return True
+            
+            # Secondary: Strategy-based detection
+            if 'roll' in strategy or 'calendar_spread' in strategy:
+                return True
+            
+            # Tertiary: Position effect analysis (NEW)
+            if self._has_roll_position_effects(order):
+                return True
+            
+            # Quaternary: Roll reference fields
+            if order.get('rolled_from') or order.get('rolled_to'):
+                return True
+            
+            return False
+            
+        except Exception as e:
+            logger.debug(f"Error in _is_roll_order for order {order.get('id', 'unknown')}: {e}")
+            return False
+    
+    def _has_roll_position_effects(self, order: Dict[str, Any]) -> bool:
+        """
+        Check if order has both open and close position effects (characteristic of rolls)
+        
+        Roll orders typically:
+        - Have 2+ legs
+        - Include at least one 'open' position effect (new position)
+        - Include at least one 'close' position effect (closing old position)
+        
+        Args:
+            order: Order dictionary to analyze
+            
+        Returns:
+            True if order has roll-like position effects
+        """
+        try:
+            legs = order.get('legs', [])
+            
+            # Must be multi-leg (rolls typically close old + open new)
+            if len(legs) < 2:
+                return False
+            
+            # Check for both open and close position effects
+            has_open = any(leg.get('position_effect') == 'open' for leg in legs)
+            has_close = any(leg.get('position_effect') == 'close' for leg in legs)
+            
+            return has_open and has_close
+            
+        except Exception as e:
+            logger.debug(f"Error in _has_roll_position_effects for order {order.get('id', 'unknown')}: {e}")
+            return False
+    
     def detect_chains(self, orders: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
         """
         Detect rolled options chains from a list of orders using lazy approach
@@ -80,19 +154,24 @@ class RolledOptionsChainDetector:
             roll_orders = []
             opening_orders = []
             strategies = set()
+            form_source_count = 0
+            position_effect_count = 0
             
             for order in orders:
                 strategy = order.get('strategy', '').lower()
                 strategies.add(strategy)
                 
-                # Look for roll indicators in multiple fields
-                form_source = order.get('form_source', '').lower()
-                if ('roll' in strategy or 
-                    form_source == 'strategy_roll' or
-                    'calendar_spread' in strategy or
-                    order.get('rolled_from') or
-                    order.get('rolled_to')):
+                # Use new multi-criteria roll detection
+                if self._is_roll_order(order):
                     roll_orders.append(order)
+                    
+                    # Track detection method for logging
+                    form_source = order.get('form_source', '').lower()
+                    if form_source == 'strategy_roll':
+                        form_source_count += 1
+                    elif self._has_roll_position_effects(order):
+                        position_effect_count += 1
+                        
                 elif (order.get('opening_strategy') and 
                       len(order.get('legs', [])) == 1):
                     # Single-leg opening orders that could start chains
@@ -101,6 +180,7 @@ class RolledOptionsChainDetector:
             # Log unique strategies for debugging
             logger.info(f"Found strategies: {sorted(list(strategies))[:10]}")  # First 10 unique strategies
             logger.info(f"Found {len(roll_orders)} roll orders and {len(opening_orders)} potential chain starts")
+            logger.info(f"Multi-criteria roll detection: {len(roll_orders)} total ({form_source_count} form_source, {position_effect_count} position_effects)")
             
             if not roll_orders:
                 logger.info("No roll orders found - no chains to detect")
@@ -285,15 +365,10 @@ class RolledOptionsChainDetector:
         chains = []
         used_orders = set()
         
-        # Find roll orders as anchor points - use broader criteria
+        # Find roll orders as anchor points - use multi-criteria detection
         roll_orders = []
         for order in orders:
-            form_source = order.get('form_source', '').lower()
-            strategy = order.get('strategy', '').lower()
-            
-            if (form_source == 'strategy_roll' or 
-                'calendar_spread' in strategy or
-                'roll' in strategy):
+            if self._is_roll_order(order):
                 roll_orders.append(order)
         
         logger.info(f"Processing {len(roll_orders)} roll orders for {group_key}")
@@ -362,12 +437,8 @@ class RolledOptionsChainDetector:
                 
                 found_continuation = False
                 for candidate in next_candidates[:3]:  # Check first 3 closest orders
-                    form_source = candidate.get('form_source', '').lower()
-                    strategy = candidate.get('strategy', '').lower()
-                    
                     # Check if this is another roll or a closing order
-                    if (form_source == 'strategy_roll' or 
-                        'calendar_spread' in strategy or
+                    if (self._is_roll_order(candidate) or
                         (len(candidate.get('legs', [])) == 1 and candidate.get('closing_strategy'))):
                         
                         chain.append(candidate)
@@ -989,13 +1060,10 @@ class RolledOptionsChainDetector:
         """Create proper roll chains by validating roll sequences"""
         chains = []
         
-        # Find all roll orders using correct field names
+        # Find all roll orders using multi-criteria detection
         roll_orders = []
         for order in orders:
-            form_source = order.get('form_source', '').lower()
-            strategy = order.get('strategy', '').lower()
-            
-            if (form_source == 'strategy_roll' or 'calendar_spread' in strategy):
+            if self._is_roll_order(order):
                 roll_orders.append(order)
         
         logger.info(f"Creating proper roll chains from {len(roll_orders)} roll orders")

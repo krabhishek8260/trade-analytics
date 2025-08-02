@@ -45,6 +45,53 @@ The Enhanced Chain Detection System builds complete option chain histories by fi
 
 ## Enhanced Detection Features
 
+### Multi-Criteria Roll Detection
+
+**Problem Solved**: Traditional detection relied too heavily on `form_source='strategy_roll'` which isn't always set, missing valid roll orders.
+
+**New Multi-Criteria Approach**:
+1. **Primary**: `form_source='strategy_roll'` (Robinhood auto-roll indicator)
+2. **Secondary**: Strategy field contains 'roll' or 'calendar_spread'
+3. **Tertiary**: Multi-leg orders with both 'open' and 'close' position effects
+4. **Quaternary**: Orders with `rolled_from` or `rolled_to` fields
+
+**Implementation**:
+```python
+def _is_roll_order(self, order):
+    # Check multiple indicators for roll activity
+    form_source = order.get('form_source', '').lower()
+    strategy = order.get('strategy', '').lower()
+    
+    # Primary: Confirmed roll by Robinhood
+    if form_source == 'strategy_roll':
+        return True
+    
+    # Secondary: Strategy-based detection
+    if 'roll' in strategy or 'calendar_spread' in strategy:
+        return True
+    
+    # Tertiary: Position effect analysis (NEW)
+    if self._has_roll_position_effects(order):
+        return True
+    
+    # Quaternary: Roll reference fields
+    if order.get('rolled_from') or order.get('rolled_to'):
+        return True
+    
+    return False
+
+def _has_roll_position_effects(self, order):
+    # Multi-leg order with both open and close legs
+    legs = order.get('legs', [])
+    if len(legs) < 2:
+        return False
+        
+    has_open = any(leg.get('position_effect') == 'open' for leg in legs)
+    has_close = any(leg.get('position_effect') == 'close' for leg in legs)
+    
+    return has_open and has_close
+```
+
 ### Backward Tracing Algorithm
 
 **Problem Solved**: Traditional detection only found roll sequences, missing the original opening orders that start chains.
@@ -152,9 +199,11 @@ Enhanced chains have:
 ### Key Log Messages
 ```
 🔍 Loaded 965 orders from debug files for enhanced detection
+Found {X} roll orders using multi-criteria detection (form_source: {Y}, position_effects: {Z})
 🎉 Found 43 enhanced chains starting with single-leg opening orders
 Found matching opening order for HOOD $45.0 call 2025-05-16
 Storing chain {chain_id}: {total_orders} orders, status={status} 🎉 ENHANCED
+Multi-criteria roll detection: {total_detected} orders ({form_source_count} form_source, {position_effect_count} position_effects)
 ```
 
 ### Performance Metrics
@@ -189,6 +238,23 @@ curl -X POST "http://localhost:8000/api/v1/rolled-options-v2/sync?force_full_syn
 - Extend lookback period in production
 - Ensure debug data files cover full history
 - Check API rate limits and permissions
+
+#### 4. Roll Orders Not Detected (Missing form_source)
+**Symptoms**: Known roll transactions missing from chains
+**Causes**: Orders lack `form_source='strategy_roll'` field
+**Diagnosis**:
+```bash
+# Check if order exists in debug files
+grep -r "ORDER_ID" backend/debug_data/*options_orders*.json
+
+# Check order structure
+jq '.[] | select(.id=="ORDER_ID") | {form_source, strategy, legs: [.legs[] | {position_effect, side}]}' debug_file.json
+```
+**Solutions**:
+- Multi-criteria detection now handles missing form_source
+- Orders with both open/close legs are detected as rolls
+- Verify legs have proper position_effect values
+- Check strategy field for 'roll' or 'calendar_spread'
 
 ### Debug Commands
 

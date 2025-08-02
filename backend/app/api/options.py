@@ -233,7 +233,9 @@ async def get_options_order(
     }
 )
 async def get_options_summary(
-    rh_service: RobinhoodService = Depends(get_robinhood_service)
+    include_chains: bool = Query(False, description="Include rolled options chain information for positions"),
+    rh_service: RobinhoodService = Depends(get_robinhood_service),
+    db = Depends(get_db)
 ):
     """Get comprehensive options portfolio summary with enhanced P&L analytics"""
     try:
@@ -257,6 +259,128 @@ async def get_options_summary(
             )
         
         positions = result["data"]
+        
+        # Optionally enhance positions with chain information
+        if include_chains:
+            try:
+                # Use the database service directly to get enhanced chains
+                from sqlalchemy import select
+                from app.models.rolled_options_chain import RolledOptionsChain
+                # Use the same user ID as rolled-options-v2 API for consistency
+                USER_ID = "123e4567-e89b-12d3-a456-426614174000"
+                
+                try:
+                    # Get chains directly from database
+                    query = select(RolledOptionsChain).where(
+                        RolledOptionsChain.user_id == USER_ID,
+                        RolledOptionsChain.status == "active"
+                    ).limit(1000)
+                    
+                    result = await db.execute(query)
+                    chain_records = result.scalars().all()
+                    
+                    # Convert to API format similar to rolled_options_v2.py
+                    chains = []
+                    for record in chain_records:
+                        chain_data = record.chain_data or {}
+                        
+                        # Determine latest position for active chains
+                        latest_position = None
+                        if record.status == "active":
+                            latest_position = chain_data.get("latest_position")
+                            
+                            # If not, derive it from the first order's roll_details.open_position
+                            if not latest_position:
+                                orders = chain_data.get("orders", [])
+                                if orders:
+                                    first_order = orders[0]
+                                    roll_details = first_order.get("roll_details")
+                                    if roll_details and roll_details.get("open_position"):
+                                        open_pos = roll_details["open_position"]
+                                        latest_position = {
+                                            "strike_price": open_pos.get("strike_price"),
+                                            "expiration_date": open_pos.get("expiration_date"),
+                                            "option_type": open_pos.get("option_type")
+                                        }
+                        
+                        chain_api = {
+                            "chain_id": record.chain_id,
+                            "underlying_symbol": record.underlying_symbol,
+                            "status": record.status,
+                            "roll_count": record.roll_count,
+                            "total_pnl": float(record.total_pnl or 0),
+                            "net_premium": float(record.net_premium or 0),
+                            "start_date": record.start_date.isoformat() if record.start_date else None,
+                            "total_orders": record.total_orders,
+                            "latest_position": latest_position
+                        }
+                        chains.append(chain_api)
+                    
+                    chains_result = {
+                        "success": True,
+                        "data": {"chains": chains}
+                    }
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to fetch enhanced chains from database: {str(e)}")
+                    chains_result = {"success": False}
+                
+                if chains_result.get("success", False):
+                    chains_data = chains_result["data"]
+                    chains = chains_data.get("chains", [])
+                    
+                    logger.info(f"Chain lookup: Found {len(chains)} chains for enhancement")
+                    
+                    # Create lookup map for positions to chain info
+                    position_chain_map = {}
+                    logger.info(f"Starting chain position mapping process...")
+                    
+                    for chain in chains:
+                        # Only consider active chains for position matching
+                        if chain.get("status") != "active":
+                            continue
+                            
+                        # Get the latest position from the enhanced chain data
+                        chain_data = chain.get("chain_data", {})
+                        latest_position = chain_data.get("latest_position") or chain.get("latest_position")
+                        
+                        if latest_position:
+                            # Create a key to match with current positions (normalize option_type to lowercase)
+                            option_type = str(latest_position['option_type']).lower()
+                            key = f"{chain['underlying_symbol']}_{latest_position['strike_price']}_{latest_position['expiration_date']}_{option_type}"
+                            
+                            logger.info(f"Adding chain {chain['chain_id']} to position map with key: {key}")
+                            
+                            position_chain_map[key] = {
+                                "chain_id": chain["chain_id"],
+                                "is_latest_in_chain": True,
+                                "chain_roll_count": chain.get("roll_count", 0),
+                                "chain_total_pnl": chain.get("total_pnl", 0),
+                                "chain_status": chain.get("status", "unknown"),
+                                "chain_net_premium": chain.get("net_premium", 0),
+                                "chain_start_date": chain.get("start_date"),
+                                "chain_total_orders": chain.get("total_orders", 0)
+                            }
+                    
+                    # Enhance positions with chain information
+                    for position in positions:
+                        # Normalize option_type to lowercase for consistent matching
+                        pos_option_type = str(position.get('option_type', '')).lower()
+                        pos_key = f"{position.get('underlying_symbol')}_{position.get('strike_price')}_{position.get('expiration_date')}_{pos_option_type}"
+                        
+                        if pos_key in position_chain_map:
+                            logger.info(f"Found chain match for position: {pos_key}")
+                            position.update(position_chain_map[pos_key])
+                        else:
+                            # Mark as not part of a chain
+                            position["chain_id"] = None
+                            position["is_latest_in_chain"] = False
+                    
+                    logger.info(f"Chain enhancement complete. Enhanced {sum(1 for p in positions if p.get('chain_id'))} out of {len(positions)} positions")
+                
+            except Exception as e:
+                logger.warning(f"Failed to fetch chain information: {str(e)}")
+                # Continue without chain info if there's an error
         
         # Calculate portfolio value metrics with proper options portfolio accounting
         total_long_value = 0

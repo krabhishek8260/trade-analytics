@@ -645,6 +645,19 @@ class JsonRolledOptionsService:
             initial_strike = strike_progression[0] if strike_progression else "unknown"
             chain_id = f"{symbol}_{option_type}_{initial_strike}_{first_order.get('created_at', '')[:10]}"
             
+            # Determine the latest position (for active chains only)
+            latest_position = None
+            if status == "active" and order_details:
+                # Find the most recent open position
+                for order_detail in reversed(order_details):
+                    if order_detail.get("position_effect") == "open":
+                        latest_position = {
+                            "strike_price": order_detail.get("strike_price"),
+                            "expiration_date": order_detail.get("expiration_date"),
+                            "option_type": order_detail.get("option_type")
+                        }
+                        break
+            
             return {
                 "is_rolled_chain": True,
                 "chain_id": chain_id,
@@ -662,6 +675,8 @@ class JsonRolledOptionsService:
                 "initial_strike": initial_strike,
                 "final_strike": strike_progression[-1] if strike_progression else "unknown",
                 "roll_count": len(orders) - 1,  # Number of rolls (orders - 1)
+                "latest_position": latest_position,  # Add latest position for active chains
+                "total_orders": len(order_details),
                 "orders": order_details
             }
             

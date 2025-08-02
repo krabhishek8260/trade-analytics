@@ -166,6 +166,26 @@ async def get_rolled_options_chains(
         for record in chains_records:
             chain_data = record.chain_data or {}
             
+            # Determine latest position for active chains
+            latest_position = None
+            if record.status == "active":
+                # Check if latest_position is already in chain_data
+                latest_position = chain_data.get("latest_position")
+                
+                # If not, derive it from the first order's roll_details.open_position
+                if not latest_position:
+                    orders = chain_data.get("orders", [])
+                    if orders:
+                        first_order = orders[0]
+                        roll_details = first_order.get("roll_details")
+                        if roll_details and roll_details.get("open_position"):
+                            open_pos = roll_details["open_position"]
+                            latest_position = {
+                                "strike_price": open_pos.get("strike_price"),
+                                "expiration_date": open_pos.get("expiration_date"),
+                                "option_type": open_pos.get("option_type")
+                            }
+            
             # Ensure required fields exist
             chain_api = {
                 "chain_id": record.chain_id,
@@ -180,6 +200,7 @@ async def get_rolled_options_chains(
                 "total_debits_paid": float(record.total_debits_paid or 0),
                 "net_premium": float(record.net_premium or 0),
                 "total_pnl": float(record.total_pnl or 0),
+                "latest_position": latest_position,  # Add latest position field
                 "orders": chain_data.get("orders", [])
             }
             chains.append(chain_api)

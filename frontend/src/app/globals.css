@@ -174,6 +174,52 @@
     @apply text-xs px-2 py-1 rounded font-medium;
   }
 
+  .chain-badge {
+    @apply text-xs px-3 py-1.5 rounded-full font-medium shadow-sm transition-all duration-200 hover:shadow-md hover:scale-105 cursor-default;
+  }
+
+  .chain-badge-blue {
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    @apply text-white;
+  }
+
+  .chain-badge-orange {
+    background: linear-gradient(135deg, #f97316 0%, #dc2626 100%);
+    @apply text-white;
+  }
+
+  .chain-badge-green {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    @apply text-white;
+  }
+
+  .chain-badge-red {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    @apply text-white;
+  }
+
+  .chain-info-box {
+    @apply mt-3 p-3 rounded-lg border transition-all duration-200;
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(29, 78, 216, 0.05) 100%);
+    border-color: rgba(59, 130, 246, 0.2);
+  }
+
+  .dark .chain-info-box {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(29, 78, 216, 0.1) 100%);
+    border-color: rgba(59, 130, 246, 0.3);
+  }
+
+  .chain-pnl-box {
+    @apply mt-2 p-2 rounded border transition-all duration-200;
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(29, 78, 216, 0.05) 100%);
+    border-color: rgba(59, 130, 246, 0.2);
+  }
+
+  .dark .chain-pnl-box {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(29, 78, 216, 0.1) 100%);
+    border-color: rgba(59, 130, 246, 0.3);
+  }
+
   .position-border {
     @apply border-l-4 pl-3;
   }

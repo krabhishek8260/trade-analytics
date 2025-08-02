@@ -63,6 +63,15 @@ export interface OptionPosition {
     implied_volatility: number
     open_interest: number
   }
+  // Chain information (optional, included when chains are requested)
+  chain_id?: string | null
+  is_latest_in_chain?: boolean
+  chain_roll_count?: number
+  chain_total_pnl?: number
+  chain_status?: string
+  chain_net_premium?: number
+  chain_start_date?: string
+  chain_total_orders?: number
 }
 
 export interface StocksSummary {
@@ -421,8 +430,9 @@ export async function getOptionsPositions(): Promise<OptionPosition[]> {
   return response.data || []
 }
 
-export async function getOptionsSummary(): Promise<OptionsSummary> {
-  const response = await apiRequest<ApiResponse<OptionsSummary>>('/options/summary')
+export async function getOptionsSummary(includeChains: boolean = false): Promise<OptionsSummary> {
+  const url = includeChains ? '/options/summary?include_chains=true' : '/options/summary'
+  const response = await apiRequest<ApiResponse<OptionsSummary>>(url)
   if (!response.data) {
     throw new ApiError(500, 'No options summary data received')
   }
@@ -580,7 +590,7 @@ export async function checkAuthStatus(): Promise<{authenticated: boolean, userna
 }
 
 // Combined dashboard data fetch
-export async function getDashboardData() {
+export async function getDashboardData(includeChains: boolean = false) {
   try {
     const [portfolioSummary, stocksSummary, optionsSummary] = await Promise.all([
       getPortfolioSummary().catch(err => {
@@ -591,7 +601,7 @@ export async function getDashboardData() {
         console.warn('Failed to fetch stocks summary:', err)
         return null
       }),
-      getOptionsSummary().catch(err => {
+      getOptionsSummary(includeChains).catch(err => {
         console.warn('Failed to fetch options summary:', err)
         return null
       })

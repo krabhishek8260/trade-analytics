@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { getDashboardData, checkAuthStatus, PortfolioSummary, StocksSummary, OptionsSummary, PortfolioGreeks, getPortfolioGreeks, ApiError } from '@/lib/api'
+import { getDashboardData, checkAuthStatus, PortfolioSummary, StocksSummary, OptionsSummary, PortfolioGreeks, getPortfolioGreeks, ApiError, getRolledOptionsChains, OptionsChain } from '@/lib/api'
 import { AnalysisTab } from '@/components/analysis'
 import { InteractiveMetricCard } from '@/components/breakdown'
 import { RolledOptionsSection } from '@/components/RolledOptionsSection'
@@ -201,11 +201,14 @@ function StocksTab({ stocks, formatCurrency, formatPercent }: {
 }
 
 // Options Tab Component
-function OptionsTab({ options, greeks, formatCurrency, formatPercent }: {
+function OptionsTab({ options, greeks, formatCurrency, formatPercent, onToggleChains, showChains, onChainClick }: {
   options: OptionsSummary | null
   greeks: PortfolioGreeks | null
   formatCurrency: (value: number) => string
   formatPercent: (value: number) => string
+  onToggleChains?: () => void
+  showChains?: boolean
+  onChainClick?: (chainId: string) => void
 }) {
   const [optionsExpanded, setOptionsExpanded] = useState(false)
   const [symbolsExpanded, setSymbolsExpanded] = useState(false)
@@ -486,46 +489,111 @@ function OptionsTab({ options, greeks, formatCurrency, formatPercent }: {
       </div>
 
       <div>
-        <button
-          onClick={() => setOptionsExpanded(!optionsExpanded)}
-          className="flex items-center justify-between w-full p-4 bg-muted/50 rounded-lg hover:bg-muted transition-colors mb-3"
-        >
-          <h3 className="text-lg font-medium">
-            Current Positions ({options.positions.length})
-          </h3>
-          <svg
-            className={`w-5 h-5 transition-transform ${optionsExpanded ? 'rotate-180' : ''}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+        <div className="flex items-center justify-between mb-3">
+          <button
+            onClick={() => setOptionsExpanded(!optionsExpanded)}
+            className="flex items-center space-x-2 p-4 bg-muted/50 rounded-lg hover:bg-muted transition-colors flex-1 mr-3"
           >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m19 9-7 7-7-7" />
-          </svg>
-        </button>
+            <h3 className="text-lg font-medium">
+              Current Positions ({options.positions.length})
+            </h3>
+            <svg
+              className={`w-5 h-5 transition-transform ${optionsExpanded ? 'rotate-180' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m19 9-7 7-7-7" />
+            </svg>
+          </button>
+          
+          {/* Chain Information Toggle */}
+          {onToggleChains && (
+            <div className="flex items-center space-x-2 bg-muted/50 rounded-lg p-3">
+              <label className="text-sm font-medium text-muted-foreground">Show Chain Info</label>
+              <button
+                onClick={onToggleChains}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  showChains ? 'bg-primary' : 'bg-input'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-background transition-transform ${
+                    showChains ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+          )}
+        </div>
         <div className="space-y-2">
           {(optionsExpanded ? options.positions : options.positions.slice(0, 5)).map((position, index) => (
-            <div key={index} className="flex justify-between items-center p-4 bg-muted/50 rounded-lg">
+            <div 
+              key={index} 
+              className="flex justify-between items-center p-4 bg-muted/50 rounded-lg"
+            >
               <div>
                 <div className="flex items-center space-x-2">
                   <span className="font-medium text-lg">{position.underlying_symbol}</span>
+                  
+                  {/* Chain Indicators */}
+                  {showChains && position.chain_id && (
+                    <>
+                      <button
+                        onClick={() => onChainClick?.(position.chain_id!)}
+                        className="text-xs px-2 py-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors cursor-pointer"
+                        title="Click to view chain details"
+                      >
+                        🔗 CHAIN
+                      </button>
+                      {position.is_latest_in_chain && (
+                        <span className="text-xs px-2 py-1 rounded bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 border border-orange-300 dark:border-orange-700">
+                          🔥 LATEST
+                        </span>
+                      )}
+                    </>
+                  )}
+                  
                   <span className={`text-xs px-2 py-1 rounded ${
-                    position.strategy.includes('BUY') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    position.strategy.includes('BUY') 
+                      ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 border border-green-300 dark:border-green-700' 
+                      : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 border border-red-300 dark:border-red-700'
                   }`}>
                     {position.strategy}
                   </span>
                 </div>
+                
                 <div className="text-sm text-muted-foreground">
                   {position.contracts} × {position.option_type.toUpperCase()} ${position.strike_price}
                 </div>
                 <div className="text-sm text-muted-foreground">
                   Exp: {position.expiration_date} ({position.days_to_expiry}d)
                 </div>
+                
+                {/* Chain Information */}
+                {showChains && position.chain_id && (
+                  <div className="mt-2 p-2 bg-muted/30 rounded border border-border">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <div className="flex items-center space-x-2">
+                        <span>🔄 {position.chain_roll_count || 0} rolls</span>
+                        {position.chain_start_date && (
+                          <span>• Started: {new Date(position.chain_start_date).toLocaleDateString()}</span>
+                        )}
+                      </div>
+                      <span className={`font-medium ${position.chain_total_pnl && position.chain_total_pnl >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                        Chain P&L: {formatCurrency(position.chain_total_pnl || 0)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+                
                 {position.greeks && (
                   <div className="text-xs text-muted-foreground mt-1">
                     Δ: {position.greeks.delta.toFixed(3)} | Θ: {position.greeks.theta.toFixed(3)} | IV: {(position.greeks.implied_volatility * 100).toFixed(1)}%
                   </div>
                 )}
               </div>
+              
               <div className="text-right">
                 <div className="font-medium text-lg">{formatCurrency(position.market_value)}</div>
                 <div className={`text-sm ${position.total_return >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -534,6 +602,15 @@ function OptionsTab({ options, greeks, formatCurrency, formatPercent }: {
                 <div className={`text-sm ${position.percent_change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                   {formatPercent(position.percent_change)}
                 </div>
+                
+                {/* Chain P&L Information */}
+                {showChains && position.chain_id && position.chain_total_pnl !== undefined && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Chain: <span className={`${position.chain_total_pnl >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                      {formatCurrency(position.chain_total_pnl)}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -559,6 +636,7 @@ export default function Dashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabType>('portfolio')
+  const [showChains, setShowChains] = useState(false)
   const [dashboardData, setDashboardData] = useState<DashboardData>({
     portfolio: null,
     stocks: null,
@@ -568,6 +646,11 @@ export default function Dashboard() {
   const [dataLoading, setDataLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  
+  // Chain modal state
+  const [selectedChainId, setSelectedChainId] = useState<string | null>(null)
+  const [chainDetails, setChainDetails] = useState<OptionsChain | null>(null)
+  const [chainLoading, setChainLoading] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -599,6 +682,13 @@ export default function Dashboard() {
     checkAuth()
   }, [])
 
+  // Refetch data when chain toggle changes
+  useEffect(() => {
+    if (isAuthenticated && !dataLoading) {
+      fetchDashboardData()
+    }
+  }, [showChains])
+
   const fetchDashboardData = async () => {
     if (!isAuthenticated) return
 
@@ -607,7 +697,7 @@ export default function Dashboard() {
     
     try {
       const [data, greeks] = await Promise.all([
-        getDashboardData(),
+        getDashboardData(showChains),
         getPortfolioGreeks().catch(err => {
           console.warn('Failed to fetch portfolio Greeks:', err)
           return null
@@ -644,6 +734,41 @@ export default function Dashboard() {
 
   const handleRefresh = () => {
     fetchDashboardData()
+  }
+
+  const handleToggleChains = () => {
+    setShowChains(!showChains)
+  }
+
+  const handleChainClick = async (chainId: string) => {
+    setSelectedChainId(chainId)
+    setChainLoading(true)
+    setChainDetails(null)
+    
+    try {
+      // Fetch the specific chain details
+      const response = await getRolledOptionsChains({ 
+        chain_id: chainId,
+        days_back: 365 // Get full history
+      })
+      
+      // Find the specific chain in the response
+      const chain = response.chains.find(c => c.chain_id === chainId)
+      if (chain) {
+        setChainDetails(chain)
+      }
+    } catch (error) {
+      console.error('Failed to fetch chain details:', error)
+      setError('Failed to load chain details')
+    } finally {
+      setChainLoading(false)
+    }
+  }
+
+  const closeChainModal = () => {
+    setSelectedChainId(null)
+    setChainDetails(null)
+    setChainLoading(false)
   }
 
   const formatCurrency = (value: number) => {
@@ -899,7 +1024,7 @@ export default function Dashboard() {
                     <>
                       {activeTab === 'portfolio' && <PortfolioTab dashboardData={dashboardData} formatCurrency={formatCurrency} formatPercent={formatPercent} />}
                       {activeTab === 'stocks' && <StocksTab stocks={dashboardData.stocks} formatCurrency={formatCurrency} formatPercent={formatPercent} />}
-                      {activeTab === 'options' && <OptionsTab options={dashboardData.options} greeks={dashboardData.greeks} formatCurrency={formatCurrency} formatPercent={formatPercent} />}
+                      {activeTab === 'options' && <OptionsTab options={dashboardData.options} greeks={dashboardData.greeks} formatCurrency={formatCurrency} formatPercent={formatPercent} onToggleChains={handleToggleChains} showChains={showChains} onChainClick={handleChainClick} />}
                       {activeTab === 'analysis' && <AnalysisTab formatCurrency={formatCurrency} formatPercent={formatPercent} />}
                     </>
                   )}
@@ -909,6 +1034,274 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Chain Details Modal */}
+      {selectedChainId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+            <div className="flex items-center justify-between p-6 border-b border-border">
+              <h2 className="text-xl font-semibold">
+                Chain Details {chainLoading && <span className="text-sm text-muted-foreground">(Loading...)</span>}
+              </h2>
+              <button
+                onClick={closeChainModal}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="overflow-y-auto max-h-[calc(90vh-120px)]">
+              {chainLoading ? (
+                <div className="p-6 text-center">
+                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
+                  <p className="text-muted-foreground">Loading chain details...</p>
+                </div>
+              ) : chainDetails ? (
+                <div className="p-6 space-y-6">
+                  {/* Chain Summary */}
+                  <div className="bg-muted/50 rounded-lg p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">Symbol:</span>
+                        <span className="font-medium ml-1">{chainDetails.underlying_symbol}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Status:</span>
+                        <span className={`ml-1 px-2 py-1 rounded text-xs ${
+                          chainDetails.status === 'active' ? 'bg-green-100 text-green-800' :
+                          chainDetails.status === 'closed' ? 'bg-gray-100 text-gray-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {chainDetails.status?.toUpperCase()}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Orders:</span>
+                        <span className="font-medium ml-1">{chainDetails.total_orders || 0}</span>
+                        <span className="text-xs text-muted-foreground ml-1">({chainDetails.roll_count || 0} rolls)</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Total P&L:</span>
+                        <span className={`font-medium ml-1 ${(chainDetails.total_pnl || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                          {formatCurrency(chainDetails.total_pnl || 0)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Orders History */}
+                  <div>
+                    <h3 className="text-lg font-medium mb-4">Orders History ({chainDetails.orders?.length || 0})</h3>
+                    <div className="space-y-3">
+                      {(chainDetails.orders || []).map((order, index) => {
+                        // Determine if this is the latest position (similar to rolled options logic)
+                        let isLatestPosition = false
+                        if (chainDetails.status === 'active') {
+                          const latestPosition = (chainDetails as any).latest_position || 
+                                                (chainDetails as any).chain_data?.latest_position ||
+                                                (chainDetails as any).current_position
+                          
+                          if (latestPosition) {
+                            if (order.roll_details) {
+                              const openPos = order.roll_details.open_position
+                              isLatestPosition = openPos && 
+                                openPos.strike_price === latestPosition.strike_price &&
+                                openPos.expiration_date === latestPosition.expiration_date &&
+                                openPos.option_type === latestPosition.option_type
+                            } else {
+                              isLatestPosition = order.strike_price === latestPosition.strike_price &&
+                                order.expiration_date === latestPosition.expiration_date &&
+                                order.option_type === latestPosition.option_type
+                            }
+                          }
+                        }
+
+                        return (
+                          <div key={order.order_id || `order-${index}`} className="bg-muted/30 rounded p-4 text-sm">
+                            <div className="flex justify-between items-start mb-2">
+                              <div className="flex items-center space-x-2">
+                                <span className="font-medium">Order #{index + 1}</span>
+                                {isLatestPosition && (
+                                  <span className="text-xs px-2 py-1 rounded bg-primary/10 text-primary border border-primary/20 font-medium">
+                                    🔥 LATEST POSITION
+                                  </span>
+                                )}
+                                <span className={`text-xs px-2 py-1 rounded ${
+                                  order.direction === 'credit' ? 'bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20'
+                                }`}>
+                                  {order.direction?.toUpperCase() || 'UNKNOWN'}
+                                </span>
+                                {order.roll_details && (
+                                  <span className="text-xs px-2 py-1 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                                    ROLL
+                                  </span>
+                                )}
+                              </div>
+                              <div className={`font-medium ${
+                                order.direction === 'credit' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                              }`}>
+                                {order.direction === 'credit' ? '+' : '-'}{formatCurrency(order.processed_premium || order.premium || 0)}
+                              </div>
+                            </div>
+                            
+                            {/* If this is a roll transaction, show both close and open positions */}
+                            {order.roll_details ? (
+                              <div className="space-y-3">
+                                {/* Close Position */}
+                                <div className="border-l-4 border-red-500 pl-3">
+                                  <div className="text-xs mb-1 text-red-600 dark:text-red-400 font-medium">CLOSE POSITION</div>
+                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div>
+                                      <div className="text-muted-foreground text-xs mb-1">POSITION</div>
+                                      <div>
+                                        ${order.roll_details.close_position.strike_price} {order.roll_details.close_position.option_type?.toUpperCase()}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">
+                                        {order.roll_details.close_position.expiration_date}
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div className="text-muted-foreground text-xs mb-1">TRANSACTION</div>
+                                      <div>
+                                        {order.roll_details.close_position.side} to close
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">
+                                        {order.quantity || order.contracts || 0} contracts
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div className="text-muted-foreground text-xs mb-1">ACTION</div>
+                                      <div className="text-red-600 font-medium">
+                                        Closing old position
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Open Position */}
+                                <div className="border-l-4 border-green-500 pl-3">
+                                  <div className="flex items-center space-x-2 mb-1">
+                                    <div className="text-xs text-green-600 dark:text-green-400 font-medium">
+                                      OPEN POSITION
+                                    </div>
+                                    {isLatestPosition && (
+                                      <span className="text-xs px-2 py-1 rounded bg-primary/10 text-primary border border-primary/20 font-medium">
+                                        LATEST POSITION
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div>
+                                      <div className="text-muted-foreground text-xs mb-1">POSITION</div>
+                                      <div>
+                                        ${order.roll_details.open_position.strike_price} {order.roll_details.open_position.option_type?.toUpperCase()}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">
+                                        {order.roll_details.open_position.expiration_date}
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div className="text-muted-foreground text-xs mb-1">TRANSACTION</div>
+                                      <div>
+                                        {order.roll_details.open_position.side} to open
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">
+                                        {order.quantity || order.contracts || 0} contracts
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div className="text-muted-foreground text-xs mb-1">ACTION</div>
+                                      <div className="text-green-600 font-medium">
+                                        Opening new position
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Roll Summary */}
+                                <div className="bg-muted/50 border border-border rounded p-2 text-xs">
+                                  <div className="font-medium text-foreground mb-1">Roll Summary:</div>
+                                  <div className="text-muted-foreground">
+                                    Rolled from ${order.roll_details.close_position.strike_price} {order.roll_details.close_position.option_type?.toUpperCase()} ({order.roll_details.close_position.expiration_date}) 
+                                    to ${order.roll_details.open_position.strike_price} {order.roll_details.open_position.option_type?.toUpperCase()} ({order.roll_details.open_position.expiration_date})
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              /* Single leg transaction */
+                              <div>
+                                {/* Add indicator for opening orders */}
+                                {order.position_effect === 'open' && (
+                                  <div className="border-l-4 border-blue-500 pl-3 mb-3">
+                                    <div className="text-xs mb-1 text-blue-600 dark:text-blue-400 font-medium">OPENING ORDER</div>
+                                    <div className="bg-muted/50 border border-border rounded p-2 text-xs">
+                                      <div className="font-medium text-foreground mb-1">Chain Start:</div>
+                                      <div className="text-muted-foreground">
+                                        This is the original opening order that started the options chain.
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                                
+                                {/* Add indicator for closing orders */}
+                                {order.position_effect === 'close' && (
+                                  <div className="border-l-4 border-red-500 pl-3 mb-3">
+                                    <div className="text-xs mb-1 text-red-600 dark:text-red-400 font-medium">CLOSING ORDER</div>
+                                    <div className="bg-muted/50 border border-border rounded p-2 text-xs">
+                                      <div className="font-medium text-foreground mb-1">Chain End:</div>
+                                      <div className="text-muted-foreground">
+                                        This order closes the final position and ends the options chain.
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                  <div>
+                                    <div className="text-muted-foreground text-xs mb-1">POSITION</div>
+                                    <div>
+                                      ${order.strike_price} {order.option_type?.toUpperCase() || 'UNKNOWN'}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {order.expiration_date}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="text-muted-foreground text-xs mb-1">TRANSACTION</div>
+                                    <div>
+                                      {order.side} to {order.position_effect}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {order.quantity || order.contracts || 0} contracts
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="text-muted-foreground text-xs mb-1">PREMIUM</div>
+                                    <div className={`font-medium ${(order.processed_premium || order.premium || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                      {formatCurrency(order.processed_premium || order.premium || 0)}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-6 text-center">
+                  <p className="text-muted-foreground">Failed to load chain details</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
