@@ -77,6 +77,105 @@ export interface StocksSummary {
   positions: StockPosition[]
 }
 
+export interface OptionsPnLAnalytics {
+  total_pnl: number
+  realized_pnl: number
+  unrealized_pnl: number
+  total_trades: number
+  realized_trades: number
+  open_positions: number
+  win_rate: number
+  largest_winner: number
+  largest_loser: number
+  avg_trade_pnl: number
+}
+
+// P&L Analytics interfaces for the new P&L service
+export interface PnLSummary {
+  total_pnl: number
+  realized_pnl: number
+  unrealized_pnl: number
+  total_trades: number
+  winning_trades: number
+  losing_trades: number
+  win_rate: number
+  largest_winner: number
+  largest_loser: number
+  avg_trade_pnl: number
+  time_period: {
+    start_date: string | null
+    end_date: string
+  }
+  calculation_info?: {
+    status: string
+    message?: string
+    last_calculated?: string
+  }
+}
+
+export interface YearlyPnL {
+  year: number
+  realized_pnl: number
+  unrealized_pnl: number
+  total_pnl: number
+  trade_count: number
+  win_rate: number
+}
+
+export interface SymbolPnL {
+  symbol: string
+  total_pnl: number
+  realized_pnl: number
+  unrealized_pnl: number
+  total_trades: number
+  winning_trades: number
+  losing_trades: number
+  win_rate: number
+  avg_trade_pnl: number
+  largest_winner?: number
+  largest_loser?: number
+}
+
+export interface TradeDetail {
+  trade_id: string
+  strategy: string
+  open_date: string | null
+  close_date?: string | null
+  strike_price: number
+  expiration_date: string | null
+  option_type: string
+  contracts: number
+  opening_premium: number
+  closing_premium?: number
+  pnl: number
+  pnl_percentage?: number
+  days_held?: number | null
+  status: 'realized' | 'unrealized'
+}
+
+export interface YearlyPerformance {
+  year: number
+  realized_pnl: number
+  trade_count: number
+  winning_trades: number
+  losing_trades: number
+  win_rate: number
+}
+
+export interface SymbolPerformance {
+  symbol: string
+  total_pnl: number
+  realized_pnl: number
+  unrealized_pnl: number
+  total_trades: number
+  realized_trades: number
+  open_positions: number
+  winning_trades: number
+  losing_trades: number
+  win_rate: number
+  avg_trade_pnl: number
+}
+
 export interface OptionsSummary {
   total_positions: number
   total_value: number
@@ -94,6 +193,11 @@ export interface OptionsSummary {
   win_rate: number
   strategies: Record<string, any>
   positions: OptionPosition[]
+  
+  // Enhanced P&L Analytics
+  pnl_analytics?: OptionsPnLAnalytics
+  yearly_performance?: YearlyPerformance[]
+  top_symbols?: SymbolPerformance[]
 }
 
 export interface PortfolioGreeks {
@@ -687,6 +791,85 @@ export async function getAvailableGroupings(): Promise<any> {
   const response = await apiRequest<ApiResponse<any>>('/breakdown/available-groups')
   if (!response.data) {
     throw new ApiError(500, 'No groupings data received')
+  }
+  return response.data
+}
+
+// P&L Analytics API functions
+export async function getPnLSummary(): Promise<PnLSummary> {
+  const response = await apiRequest<ApiResponse<PnLSummary>>('/options/pnl/summary')
+  if (!response.data) {
+    throw new ApiError(500, 'No P&L summary data received')
+  }
+  return response.data
+}
+
+export async function getYearlyPnL(startYear?: number, endYear?: number): Promise<YearlyPnL[]> {
+  const queryParams = new URLSearchParams()
+  if (startYear) queryParams.append('start_year', startYear.toString())
+  if (endYear) queryParams.append('end_year', endYear.toString())
+  
+  const url = `/options/pnl/by-year${queryParams.toString() ? '?' + queryParams.toString() : ''}`
+  const response = await apiRequest<ApiResponse<{ yearly_breakdown: YearlyPnL[] }>>(url)
+  if (!response.data?.yearly_breakdown) {
+    throw new ApiError(500, 'No yearly P&L data received')
+  }
+  return response.data.yearly_breakdown
+}
+
+export async function getSymbolPnL(
+  year?: number | null,
+  limit?: number,
+  sortBy?: string,
+  sortOrder?: string
+): Promise<SymbolPnL[]> {
+  const queryParams = new URLSearchParams()
+  if (year) queryParams.append('year', year.toString())
+  if (limit) queryParams.append('limit', limit.toString())
+  if (sortBy) queryParams.append('sort_by', sortBy)
+  if (sortOrder) queryParams.append('sort_order', sortOrder)
+  
+  const url = `/options/pnl/by-symbol${queryParams.toString() ? '?' + queryParams.toString() : ''}`
+  const response = await apiRequest<ApiResponse<{ symbol_performance: SymbolPnL[] }>>(url)
+  if (!response.data?.symbol_performance) {
+    throw new ApiError(500, 'No symbol P&L data received')
+  }
+  return response.data.symbol_performance
+}
+
+export async function getSymbolTrades(
+  symbol: string,
+  year?: number | null,
+  tradeType?: string
+): Promise<TradeDetail[]> {
+  const queryParams = new URLSearchParams()
+  if (year) queryParams.append('year', year.toString())
+  if (tradeType) queryParams.append('trade_type', tradeType)
+  
+  const url = `/options/pnl/trades/${symbol}${queryParams.toString() ? '?' + queryParams.toString() : ''}`
+  const response = await apiRequest<ApiResponse<{ symbol: string; trades: TradeDetail[] }>>(url)
+  if (!response.data?.trades) {
+    throw new ApiError(500, 'No trade details received')
+  }
+  return response.data.trades
+}
+
+export async function triggerPnLProcessing(force = false): Promise<{ success: boolean; message: string }> {
+  const queryParams = new URLSearchParams()
+  if (force) queryParams.append('force', 'true')
+  
+  const url = `/options/pnl/process${queryParams.toString() ? '?' + queryParams.toString() : ''}`
+  const response = await apiPostRequest<ApiResponse<{ success: boolean; message: string }>>(url, {})
+  if (!response.data) {
+    throw new ApiError(500, 'No processing status received')
+  }
+  return response.data
+}
+
+export async function getPnLProcessingStatus(): Promise<{ status: string; message?: string; last_calculated?: string }> {
+  const response = await apiRequest<ApiResponse<{ status: string; message?: string; last_calculated?: string }>>('/options/pnl/status')
+  if (!response.data) {
+    throw new ApiError(500, 'No processing status received')
   }
   return response.data
 }

@@ -5,11 +5,15 @@ Options API endpoints
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import List, Optional
 from datetime import datetime, timedelta
+from uuid import UUID
 import logging
 
 from app.services.robinhood_service import RobinhoodService
+from app.services.options_pnl_service import OptionsPnLService
 from app.schemas.common import DataResponse, ErrorResponse, ListResponse
 from app.schemas.options import OptionsSummary
+from app.core.security import get_current_user_id, ensure_demo_user_exists
+from app.core.database import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -231,8 +235,19 @@ async def get_options_order(
 async def get_options_summary(
     rh_service: RobinhoodService = Depends(get_robinhood_service)
 ):
-    """Get comprehensive options portfolio summary"""
+    """Get comprehensive options portfolio summary with enhanced P&L analytics"""
     try:
+        # Get enhanced P&L summary
+        pnl_result = await rh_service.calculate_options_pnl_summary()
+        if not pnl_result.get("success", False):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=pnl_result.get("message", "Failed to calculate P&L summary")
+            )
+        
+        pnl_data = pnl_result["data"]
+        
+        # Get current positions for additional metrics
         result = await rh_service.get_options_positions()
         
         if not result.get("success", False):
@@ -243,11 +258,10 @@ async def get_options_summary(
         
         positions = result["data"]
         
-        # Calculate summary metrics with proper options portfolio accounting
+        # Calculate portfolio value metrics with proper options portfolio accounting
         total_long_value = 0
         total_short_value = 0
         total_cost = 0
-        total_return = sum(pos.get("total_return", 0) for pos in positions)
         
         for pos in positions:
             market_value = pos.get("market_value", 0)
@@ -266,22 +280,19 @@ async def get_options_summary(
         # Net portfolio value = Long assets - Short liabilities
         total_value = total_long_value - total_short_value
         
-        logger.info(f"Options Portfolio Calculation:")
+        logger.info(f"Enhanced Options Portfolio Calculation:")
         logger.info(f"  Long positions value (assets): ${total_long_value:,.2f}")
         logger.info(f"  Short positions value (liabilities): ${total_short_value:,.2f}")
         logger.info(f"  Net portfolio value: ${total_value:,.2f}")
-        logger.info(f"  Total cost basis: ${total_cost:,.2f}")
-        logger.info(f"  Total return: ${total_return:,.2f}")
+        logger.info(f"  Total P&L (realized + unrealized): ${pnl_data['total_pnl']:,.2f}")
+        logger.info(f"  Realized P&L: ${pnl_data['realized_pnl']:,.2f}")
+        logger.info(f"  Unrealized P&L: ${pnl_data['unrealized_pnl']:,.2f}")
         
         # Strategy breakdown
         long_positions = sum(1 for pos in positions if pos.get("position_type") == "long")
         short_positions = sum(1 for pos in positions if pos.get("position_type") == "short")
         calls_count = sum(1 for pos in positions if pos.get("option_type", "").lower() == "call")
         puts_count = sum(1 for pos in positions if pos.get("option_type", "").lower() == "put")
-        
-        # Performance metrics
-        winners = sum(1 for pos in positions if pos.get("total_return", 0) > 0)
-        losers = sum(1 for pos in positions if pos.get("total_return", 0) < 0)
         
         # Expiry analysis
         expiring_this_week = sum(1 for pos in positions if pos.get("days_to_expiry", 999) <= 7)
@@ -297,12 +308,34 @@ async def get_options_summary(
             strategies[strategy]["value"] += pos.get("market_value", 0)
             strategies[strategy]["return"] += pos.get("total_return", 0)
         
+        # Enhanced summary with P&L analytics
         summary = {
+            # Portfolio values
             "total_positions": len(positions),
             "total_value": total_value,
             "total_cost": total_cost,
-            "total_return": total_return,
-            "total_return_percent": (total_return / total_cost * 100) if total_cost > 0 else 0,
+            "total_return": pnl_data["unrealized_pnl"],  # Current unrealized P&L
+            "total_return_percent": (pnl_data["unrealized_pnl"] / total_cost * 100) if total_cost > 0 else 0,
+            
+            # Enhanced P&L Analytics
+            "pnl_analytics": {
+                "total_pnl": pnl_data["total_pnl"],
+                "realized_pnl": pnl_data["realized_pnl"],
+                "unrealized_pnl": pnl_data["unrealized_pnl"],
+                "total_trades": pnl_data["total_trades"],
+                "realized_trades": pnl_data["realized_trades"],
+                "open_positions": pnl_data["open_positions"],
+                "win_rate": pnl_data["win_rate"],
+                "largest_winner": pnl_data["largest_winner"],
+                "largest_loser": pnl_data["largest_loser"],
+                "avg_trade_pnl": pnl_data["avg_trade_pnl"]
+            },
+            
+            # Yearly performance breakdown
+            "yearly_performance": pnl_data["realized_breakdown"],
+            
+            # Top performing symbols
+            "top_symbols": pnl_data["symbol_breakdown"][:10],  # Top 10 symbols
             
             # Breakdown by strategy
             "long_positions": long_positions,
@@ -314,10 +347,10 @@ async def get_options_summary(
             "expiring_this_week": expiring_this_week,
             "expiring_this_month": expiring_this_month,
             
-            # Performance
-            "winners": winners,
-            "losers": losers,
-            "win_rate": (winners / len(positions) * 100) if positions else 0,
+            # Performance (now using enhanced P&L data)
+            "winners": pnl_data["winning_trades"],
+            "losers": pnl_data["losing_trades"],
+            "win_rate": pnl_data["win_rate"],
             
             # Strategy breakdown
             "strategies": strategies,
@@ -331,7 +364,230 @@ async def get_options_summary(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error calculating options summary: {str(e)}")
+        logger.error(f"Error calculating enhanced options summary: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+
+
+@router.get(
+    "/pnl/summary",
+    response_model=DataResponse,
+    responses={
+        200: {"description": "P&L summary retrieved successfully"},
+        401: {"description": "Unauthorized", "model": ErrorResponse},
+        500: {"description": "Internal server error", "model": ErrorResponse}
+    }
+)
+async def get_pnl_summary(
+    current_user_id: UUID = Depends(get_current_user_id),
+    db = Depends(get_db)
+):
+    """Get comprehensive P&L summary with realized and unrealized breakdown"""
+    try:
+        from app.services.options_pnl_service import options_pnl_service
+        
+        # Ensure demo user exists for development/testing
+        await ensure_demo_user_exists(db)
+        
+        result = await options_pnl_service.calculate_total_pnl(current_user_id)
+        
+        return DataResponse(data=result)
+        
+    except Exception as e:
+        logger.error(f"Error fetching P&L summary: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+
+
+@router.get(
+    "/pnl/by-year",
+    response_model=DataResponse,
+    responses={
+        200: {"description": "Yearly P&L breakdown retrieved successfully"},
+        401: {"description": "Unauthorized", "model": ErrorResponse},
+        500: {"description": "Internal server error", "model": ErrorResponse}
+    }
+)
+async def get_yearly_pnl(
+    start_year: Optional[int] = Query(None, description="Start year for analysis"),
+    end_year: Optional[int] = Query(None, description="End year for analysis"),
+    current_user_id: UUID = Depends(get_current_user_id),
+    db = Depends(get_db)
+):
+    """Get year-over-year P&L breakdown"""
+    try:
+        from app.services.options_pnl_service import options_pnl_service
+        
+        # Ensure demo user exists for development/testing
+        await ensure_demo_user_exists(db)
+        
+        result = await options_pnl_service.calculate_yearly_pnl(current_user_id, start_year, end_year)
+        
+        return DataResponse(data=result)
+        
+    except Exception as e:
+        logger.error(f"Error fetching yearly P&L: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+
+
+@router.get(
+    "/pnl/by-symbol",
+    response_model=DataResponse,
+    responses={
+        200: {"description": "Symbol P&L breakdown retrieved successfully"},
+        401: {"description": "Unauthorized", "model": ErrorResponse},
+        500: {"description": "Internal server error", "model": ErrorResponse}
+    }
+)
+async def get_symbol_pnl(
+    year: Optional[int] = Query(None, description="Filter by specific year"),
+    limit: Optional[int] = Query(20, ge=1, le=100, description="Number of symbols to return"),
+    sort_by: str = Query("total_pnl", description="Field to sort by (total_pnl, win_rate, total_trades)"),
+    sort_order: str = Query("desc", regex="^(asc|desc)$", description="Sort order"),
+    current_user_id: UUID = Depends(get_current_user_id),
+    db = Depends(get_db)
+):
+    """Get symbol-level P&L breakdown"""
+    try:
+        from app.services.options_pnl_service import options_pnl_service
+        
+        # Ensure demo user exists for development/testing
+        await ensure_demo_user_exists(db)
+        
+        result = await options_pnl_service.calculate_symbol_pnl(
+            current_user_id, year, limit, sort_by, sort_order
+        )
+        
+        return DataResponse(data=result)
+        
+    except Exception as e:
+        logger.error(f"Error fetching symbol P&L: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+
+
+@router.get(
+    "/pnl/trades/{symbol}",
+    response_model=DataResponse,
+    responses={
+        200: {"description": "Symbol trades retrieved successfully"},
+        404: {"description": "No trades found for symbol", "model": ErrorResponse},
+        401: {"description": "Unauthorized", "model": ErrorResponse},
+        500: {"description": "Internal server error", "model": ErrorResponse}
+    }
+)
+async def get_symbol_trades(
+    symbol: str,
+    year: Optional[int] = Query(None, description="Filter by specific year"),
+    trade_type: Optional[str] = Query(None, regex="^(realized|unrealized)$", description="Filter by trade type"),
+    current_user_id: UUID = Depends(get_current_user_id),
+    db = Depends(get_db)
+):
+    """Get individual trades for a specific symbol"""
+    try:
+        from app.services.options_pnl_service import options_pnl_service
+        
+        # Ensure demo user exists for development/testing
+        await ensure_demo_user_exists(db)
+        
+        result = await options_pnl_service.get_symbol_trades(current_user_id, symbol, year, trade_type)
+        
+        if not result["trades"]:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No trades found for symbol {symbol.upper()}"
+            )
+        
+        return DataResponse(data=result)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching trades for symbol {symbol}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+
+
+@router.post(
+    "/pnl/process",
+    response_model=DataResponse,
+    responses={
+        200: {"description": "P&L processing triggered successfully"},
+        401: {"description": "Unauthorized", "model": ErrorResponse},
+        500: {"description": "Internal server error", "model": ErrorResponse}
+    }
+)
+async def trigger_pnl_processing(
+    force: bool = Query(False, description="Force recalculation even if cache is fresh"),
+    current_user_id: UUID = Depends(get_current_user_id),
+    db = Depends(get_db),
+    rh_service: RobinhoodService = Depends(get_robinhood_service)
+):
+    """Trigger background P&L processing for the current user"""
+    try:
+        from app.services.options_pnl_background_service import pnl_background_service
+        
+        # Ensure demo user exists for testing
+        await ensure_demo_user_exists(db)
+        
+        result = await pnl_background_service.trigger_user_pnl_processing(current_user_id)
+        
+        return DataResponse(data=result)
+        
+    except Exception as e:
+        logger.error(f"Error triggering P&L processing: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+
+
+@router.get(
+    "/pnl/status",
+    response_model=DataResponse,
+    responses={
+        200: {"description": "P&L processing status retrieved successfully"},
+        401: {"description": "Unauthorized", "model": ErrorResponse},
+        500: {"description": "Internal server error", "model": ErrorResponse}
+    }
+)
+async def get_pnl_processing_status(
+    current_user_id: UUID = Depends(get_current_user_id),
+    db = Depends(get_db),
+    rh_service: RobinhoodService = Depends(get_robinhood_service)
+):
+    """Get P&L processing status for the current user"""
+    try:
+        from app.services.options_pnl_background_service import pnl_background_service
+        
+        # Ensure demo user exists for testing
+        await ensure_demo_user_exists(db)
+        
+        cached_data = await pnl_background_service.get_cached_pnl(current_user_id)
+        
+        if cached_data:
+            status_info = cached_data["calculation_info"]
+        else:
+            status_info = {
+                "status": "pending",
+                "message": "No P&L processing has been initiated yet"
+            }
+        
+        return DataResponse(data=status_info)
+        
+    except Exception as e:
+        logger.error(f"Error getting P&L processing status: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error"
@@ -495,6 +751,38 @@ async def get_portfolio_greeks(
         raise
     except Exception as e:
         logger.error(f"Error fetching portfolio Greeks: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+
+
+@router.post("/pnl/recalculate",
+    response_model=DataResponse,
+    summary="Force P&L recalculation",
+    description="Force a fresh P&L calculation by invalidating cache",
+    responses={
+        200: {"description": "Recalculation triggered successfully"},
+        401: {"description": "Unauthorized", "model": ErrorResponse},
+        500: {"description": "Internal server error", "model": ErrorResponse}
+    }
+)
+async def force_pnl_recalculation(
+    current_user_id: UUID = Depends(get_current_user_id),
+    db = Depends(get_db)
+):
+    """Force P&L recalculation for debugging"""
+    try:
+        await ensure_demo_user_exists(db)
+        
+        # Get P&L service and force recalculation
+        pnl_service = OptionsPnLService()
+        result = await pnl_service.invalidate_cache_and_recalculate(current_user_id)
+        
+        return DataResponse(data=result)
+        
+    except Exception as e:
+        logger.error(f"Error forcing P&L recalculation: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error"

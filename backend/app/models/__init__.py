@@ -7,6 +7,7 @@ from .stock_position import StockPosition
 from .portfolio import Portfolio  
 from .cache_entry import CacheEntry
 from .rolled_options_chain import RolledOptionsChain, UserRolledOptionsSync
+from .options_pnl_cache import UserOptionsPnLCache, OptionsPnLProcessingLog
 
 __all__ = [
     "User",
@@ -16,5 +17,7 @@ __all__ = [
     "Portfolio",
     "CacheEntry",
     "RolledOptionsChain",
-    "UserRolledOptionsSync"
+    "UserRolledOptionsSync",
+    "UserOptionsPnLCache",
+    "OptionsPnLProcessingLog"
 ]

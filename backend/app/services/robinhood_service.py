@@ -874,3 +874,392 @@ class RobinhoodService:
         except Exception as e:
             logger.error(f"Error analyzing ticker performance: {str(e)}")
             return {"success": False, "message": f"Error: {str(e)}"}
+    
+    async def calculate_options_pnl_summary(self, user_id: Optional[str] = None) -> Dict[str, Any]:
+        """Calculate comprehensive options P&L summary with cached data and background processing"""
+        try:
+            logger.info("Starting P&L summary calculation...")
+            
+            # Import here to avoid circular imports
+            from app.services.options_pnl_background_service import pnl_background_service
+            
+            # Try to get user_id - in a real implementation, this would come from auth
+            # For now, we'll use a dummy UUID or the first user we find
+            if not user_id:
+                import uuid
+                user_id = uuid.uuid4()  # This should be replaced with actual user from auth
+            
+            # Try to get cached data first
+            cached_data = await pnl_background_service.get_cached_pnl(user_id)
+            
+            # Get current positions for unrealized P&L (always fresh)
+            positions_result = await self.get_options_positions()
+            if not positions_result.get("success", False):
+                logger.error("Failed to fetch options positions")
+                return {"success": False, "message": "Failed to fetch options positions"}
+            
+            positions = positions_result["data"]
+            logger.info(f"Fetched {len(positions)} positions")
+            
+            # Calculate current unrealized P&L (fast)
+            unrealized_data = self._calculate_unrealized_pnl(positions)
+            logger.info(f"Calculated unrealized P&L: {unrealized_data['total_pnl']}")
+            
+            # Use cached realized data if available, otherwise use empty data and trigger background processing
+            if cached_data and cached_data["calculation_info"]["status"] == "completed":
+                logger.info("Using cached realized P&L data")
+                cached_analytics = cached_data["analytics"]
+                realized_data = {
+                    "total_pnl": cached_analytics["realized_pnl"],
+                    "trade_count": cached_analytics["realized_trades"],
+                    "winning_trades": cached_analytics["winning_trades"] - unrealized_data["winning_positions"],
+                    "losing_trades": cached_analytics["losing_trades"] - unrealized_data["losing_positions"],
+                    "largest_winner": cached_analytics["largest_winner"],
+                    "largest_loser": cached_analytics["largest_loser"],
+                    "yearly_breakdown": cached_data["yearly_breakdown"],
+                    "symbol_breakdown": {
+                        symbol["symbol"]: {
+                            "total_pnl": symbol["realized_pnl"],
+                            "trade_count": symbol["realized_trades"],
+                            "winning_trades": symbol["winning_trades"] - 
+                                (unrealized_data["symbol_breakdown"].get(symbol["symbol"], {}).get("winning_positions", 0)),
+                            "losing_trades": symbol["losing_trades"] - 
+                                (unrealized_data["symbol_breakdown"].get(symbol["symbol"], {}).get("losing_positions", 0))
+                        }
+                        for symbol in cached_data["symbol_breakdown"]
+                        if symbol["realized_trades"] > 0
+                    }
+                }
+            else:
+                logger.info("No cached realized P&L data available, using empty data and triggering background processing")
+                # Trigger background processing for this user
+                await pnl_background_service.trigger_user_pnl_processing(user_id)
+                
+                # Use empty realized data for now
+                realized_data = {
+                    "total_pnl": 0.0,
+                    "trade_count": 0,
+                    "winning_trades": 0,
+                    "losing_trades": 0,
+                    "largest_winner": 0.0,
+                    "largest_loser": 0.0,
+                    "yearly_breakdown": [],
+                    "symbol_breakdown": {}
+                }
+            
+            # Combine results
+            total_pnl = realized_data["total_pnl"] + unrealized_data["total_pnl"]
+            total_trades = realized_data["trade_count"] + unrealized_data["position_count"]
+            
+            winning_trades = realized_data["winning_trades"] + unrealized_data["winning_positions"]
+            losing_trades = realized_data["losing_trades"] + unrealized_data["losing_positions"]
+            
+            win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+            
+            pnl_summary = {
+                "total_pnl": round(total_pnl, 2),
+                "realized_pnl": round(realized_data["total_pnl"], 2),
+                "unrealized_pnl": round(unrealized_data["total_pnl"], 2),
+                "total_trades": total_trades,
+                "realized_trades": realized_data["trade_count"],
+                "open_positions": unrealized_data["position_count"],
+                "winning_trades": winning_trades,
+                "losing_trades": losing_trades,
+                "win_rate": round(win_rate, 2),
+                "largest_winner": round(max(realized_data["largest_winner"], unrealized_data["largest_winner"]), 2),
+                "largest_loser": round(min(realized_data["largest_loser"], unrealized_data["largest_loser"]), 2),
+                "avg_trade_pnl": round(total_pnl / total_trades, 2) if total_trades > 0 else 0,
+                "realized_breakdown": realized_data["yearly_breakdown"],
+                "symbol_breakdown": self._combine_symbol_pnl(realized_data["symbol_breakdown"], unrealized_data["symbol_breakdown"]),
+                "cache_info": cached_data["calculation_info"] if cached_data else {
+                    "status": "processing",
+                    "message": "Realized P&L calculation started in background"
+                }
+            }
+            
+            logger.info("P&L summary calculation completed successfully")
+            return {"success": True, "data": pnl_summary}
+            
+        except Exception as e:
+            logger.error(f"Error calculating options P&L summary: {str(e)}")
+            return {"success": False, "message": f"Error: {str(e)}"}
+    
+    def _calculate_unrealized_pnl(self, positions: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Calculate unrealized P&L from current positions"""
+        total_pnl = 0.0
+        position_count = len(positions)
+        winning_positions = 0
+        losing_positions = 0
+        largest_winner = 0.0
+        largest_loser = 0.0
+        symbol_breakdown = {}
+        
+        for position in positions:
+            pnl = position.get("total_return", 0)
+            symbol = position.get("underlying_symbol", "UNKNOWN")
+            
+            total_pnl += pnl
+            
+            if pnl > 0:
+                winning_positions += 1
+                largest_winner = max(largest_winner, pnl)
+            elif pnl < 0:
+                losing_positions += 1
+                largest_loser = min(largest_loser, pnl)
+            
+            # Symbol breakdown
+            if symbol not in symbol_breakdown:
+                symbol_breakdown[symbol] = {
+                    "symbol": symbol,
+                    "total_pnl": 0.0,
+                    "position_count": 0,
+                    "winning_positions": 0,
+                    "losing_positions": 0
+                }
+            
+            symbol_breakdown[symbol]["total_pnl"] += pnl
+            symbol_breakdown[symbol]["position_count"] += 1
+            if pnl > 0:
+                symbol_breakdown[symbol]["winning_positions"] += 1
+            elif pnl < 0:
+                symbol_breakdown[symbol]["losing_positions"] += 1
+        
+        return {
+            "total_pnl": total_pnl,
+            "position_count": position_count,
+            "winning_positions": winning_positions,
+            "losing_positions": losing_positions,
+            "largest_winner": largest_winner,
+            "largest_loser": largest_loser,
+            "symbol_breakdown": symbol_breakdown
+        }
+    
+    async def _calculate_realized_pnl(self, orders: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Calculate realized P&L from filled orders by matching opens and closes"""
+        # Filter to filled orders only
+        filled_orders = [order for order in orders if order.get("state") == "filled"]
+        
+        # Match opening and closing orders
+        matched_trades = self._match_opening_closing_orders(filled_orders)
+        
+        total_pnl = 0.0
+        trade_count = len(matched_trades)
+        winning_trades = 0
+        losing_trades = 0
+        largest_winner = 0.0
+        largest_loser = 0.0
+        yearly_breakdown = {}
+        symbol_breakdown = {}
+        
+        for trade in matched_trades:
+            pnl = trade["pnl"]
+            symbol = trade["symbol"]
+            close_year = trade.get("close_year", datetime.now().year)
+            
+            total_pnl += pnl
+            
+            if pnl > 0:
+                winning_trades += 1
+                largest_winner = max(largest_winner, pnl)
+            elif pnl < 0:
+                losing_trades += 1
+                largest_loser = min(largest_loser, pnl)
+            
+            # Yearly breakdown
+            if close_year not in yearly_breakdown:
+                yearly_breakdown[close_year] = {
+                    "year": close_year,
+                    "realized_pnl": 0.0,
+                    "trade_count": 0,
+                    "winning_trades": 0,
+                    "losing_trades": 0
+                }
+            
+            yearly_breakdown[close_year]["realized_pnl"] += pnl
+            yearly_breakdown[close_year]["trade_count"] += 1
+            if pnl > 0:
+                yearly_breakdown[close_year]["winning_trades"] += 1
+            elif pnl < 0:
+                yearly_breakdown[close_year]["losing_trades"] += 1
+            
+            # Symbol breakdown
+            if symbol not in symbol_breakdown:
+                symbol_breakdown[symbol] = {
+                    "symbol": symbol,
+                    "total_pnl": 0.0,
+                    "trade_count": 0,
+                    "winning_trades": 0,
+                    "losing_trades": 0
+                }
+            
+            symbol_breakdown[symbol]["total_pnl"] += pnl
+            symbol_breakdown[symbol]["trade_count"] += 1
+            if pnl > 0:
+                symbol_breakdown[symbol]["winning_trades"] += 1
+            elif pnl < 0:
+                symbol_breakdown[symbol]["losing_trades"] += 1
+        
+        # Calculate win rates for yearly breakdown
+        for year_data in yearly_breakdown.values():
+            total = year_data["winning_trades"] + year_data["losing_trades"]
+            year_data["win_rate"] = (year_data["winning_trades"] / total * 100) if total > 0 else 0
+        
+        return {
+            "total_pnl": total_pnl,
+            "trade_count": trade_count,
+            "winning_trades": winning_trades,
+            "losing_trades": losing_trades,
+            "largest_winner": largest_winner,
+            "largest_loser": largest_loser,
+            "yearly_breakdown": sorted(yearly_breakdown.values(), key=lambda x: x["year"]),
+            "symbol_breakdown": symbol_breakdown
+        }
+    
+    def _match_opening_closing_orders(self, orders: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Match opening and closing orders to calculate realized P&L"""
+        from collections import defaultdict
+        
+        trades = []
+        
+        # Group orders by symbol + strike + expiry + option_type
+        position_groups = defaultdict(list)
+        
+        for order in orders:
+            symbol = order.get("underlying_symbol", "")
+            strike = order.get("strike_price", 0)
+            expiry = order.get("expiration_date", "")
+            option_type = order.get("option_type", "")
+            
+            if not symbol or not strike:
+                continue
+                
+            key = (symbol, str(strike), expiry, option_type)
+            position_groups[key].append(order)
+        
+        # Match opening and closing orders within each group
+        for key, group_orders in position_groups.items():
+            # Sort by creation date
+            group_orders.sort(key=lambda x: x.get("created_at", ""))
+            
+            open_orders = []
+            
+            for order in group_orders:
+                position_effect = order.get("position_effect", "")
+                processed_premium = order.get("processed_premium", 0) or order.get("premium", 0)
+                
+                if position_effect == "open":
+                    open_orders.append(order)
+                elif position_effect == "close" and open_orders:
+                    # Match with the first open order (FIFO)
+                    open_order = open_orders.pop(0)
+                    
+                    # Calculate P&L
+                    pnl = self._calculate_trade_pnl(open_order, order)
+                    
+                    # Extract close date for yearly breakdown
+                    close_date = order.get("created_at", "")
+                    close_year = datetime.now().year
+                    if close_date:
+                        try:
+                            close_year = datetime.fromisoformat(close_date.replace('Z', '+00:00')).year
+                        except:
+                            pass
+                    
+                    trades.append({
+                        "symbol": order.get("underlying_symbol", ""),
+                        "strike_price": order.get("strike_price", 0),
+                        "expiration_date": order.get("expiration_date", ""),
+                        "option_type": order.get("option_type", ""),
+                        "open_date": open_order.get("created_at", ""),
+                        "close_date": order.get("created_at", ""),
+                        "close_year": close_year,
+                        "contracts": abs(order.get("quantity", 0)),
+                        "opening_premium": open_order.get("processed_premium", 0) or open_order.get("premium", 0),
+                        "closing_premium": order.get("processed_premium", 0) or order.get("premium", 0),
+                        "pnl": pnl
+                    })
+        
+        return trades
+    
+    def _calculate_trade_pnl(self, open_order: Dict[str, Any], close_order: Dict[str, Any]) -> float:
+        """Calculate P&L for a matched open/close trade pair"""
+        try:
+            open_premium = float(open_order.get("processed_premium", 0) or open_order.get("premium", 0))
+            close_premium = float(close_order.get("processed_premium", 0) or close_order.get("premium", 0))
+            contracts = abs(float(close_order.get("quantity", 0)))
+            
+            # Determine if this was a long or short position based on direction
+            open_direction = open_order.get("direction", "").lower()
+            close_direction = close_order.get("direction", "").lower()
+            
+            if open_direction == "debit":
+                # Long position: paid to open, received to close
+                # P&L = (close_premium - open_premium) * contracts * 100
+                pnl = (close_premium - open_premium) * contracts * 100
+            elif open_direction == "credit":
+                # Short position: received to open, paid to close
+                # P&L = (open_premium - close_premium) * contracts * 100
+                pnl = (open_premium - close_premium) * contracts * 100
+            else:
+                # Fallback: assume based on processed_premium_direction
+                open_dir = open_order.get("processed_premium_direction", "").lower()
+                if open_dir == "credit":
+                    pnl = (open_premium - close_premium) * contracts * 100
+                else:
+                    pnl = (close_premium - open_premium) * contracts * 100
+            
+            return pnl
+            
+        except Exception as e:
+            logger.error(f"Error calculating trade P&L: {str(e)}")
+            return 0.0
+    
+    def _combine_symbol_pnl(self, realized_breakdown: Dict, unrealized_breakdown: Dict) -> List[Dict[str, Any]]:
+        """Combine realized and unrealized P&L by symbol"""
+        combined = {}
+        
+        # Add realized data
+        for symbol, data in realized_breakdown.items():
+            combined[symbol] = {
+                "symbol": symbol,
+                "total_pnl": data["total_pnl"],
+                "realized_pnl": data["total_pnl"],
+                "unrealized_pnl": 0.0,
+                "total_trades": data["trade_count"],
+                "realized_trades": data["trade_count"],
+                "open_positions": 0,
+                "winning_trades": data["winning_trades"],
+                "losing_trades": data["losing_trades"]
+            }
+        
+        # Add unrealized data
+        for symbol, data in unrealized_breakdown.items():
+            if symbol not in combined:
+                combined[symbol] = {
+                    "symbol": symbol,
+                    "total_pnl": data["total_pnl"],
+                    "realized_pnl": 0.0,
+                    "unrealized_pnl": data["total_pnl"],
+                    "total_trades": data["position_count"],
+                    "realized_trades": 0,
+                    "open_positions": data["position_count"],
+                    "winning_trades": data["winning_positions"],
+                    "losing_trades": data["losing_positions"]
+                }
+            else:
+                combined[symbol]["total_pnl"] += data["total_pnl"]
+                combined[symbol]["unrealized_pnl"] = data["total_pnl"]
+                combined[symbol]["total_trades"] += data["position_count"]
+                combined[symbol]["open_positions"] = data["position_count"]
+                combined[symbol]["winning_trades"] += data["winning_positions"]
+                combined[symbol]["losing_trades"] += data["losing_positions"]
+        
+        # Calculate win rates and sort by total P&L
+        symbol_list = []
+        for symbol_data in combined.values():
+            total_trades = symbol_data["winning_trades"] + symbol_data["losing_trades"]
+            symbol_data["win_rate"] = (symbol_data["winning_trades"] / total_trades * 100) if total_trades > 0 else 0
+            symbol_data["avg_trade_pnl"] = symbol_data["total_pnl"] / symbol_data["total_trades"] if symbol_data["total_trades"] > 0 else 0
+            symbol_list.append(symbol_data)
+        
+        return sorted(symbol_list, key=lambda x: x["total_pnl"], reverse=True)

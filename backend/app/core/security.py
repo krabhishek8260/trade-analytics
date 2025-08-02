@@ -6,8 +6,11 @@ from datetime import datetime, timedelta
 from typing import Any, Union, Optional
 from jose import jwt, JWTError
 from passlib.context import CryptContext
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Depends, Header
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 import logging
+import uuid
 
 from app.core.config import settings
 
@@ -72,3 +75,82 @@ def create_credentials_exception() -> HTTPException:
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+# Demo user ID for testing when no auth is implemented
+DEMO_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
+
+async def get_current_user_id(
+    authorization: Optional[str] = Header(None)
+) -> uuid.UUID:
+    """
+    Get current authenticated user ID.
+    
+    For now, returns a demo user ID when no authentication is present.
+    In production, this should validate JWT tokens and return actual user IDs.
+    
+    Args:
+        authorization: Bearer token from Authorization header
+        
+    Returns:
+        UUID of the current user
+        
+    Raises:
+        HTTPException: If authentication fails in production mode
+    """
+    
+    # Check if we're in development/demo mode (no auth header or demo token)
+    if not authorization or authorization == "Bearer demo":
+        # Return demo user ID for testing
+        logger.debug(f"Using demo user ID for testing: {DEMO_USER_ID}")
+        return DEMO_USER_ID
+    
+    # In production, validate the JWT token
+    if not authorization.startswith("Bearer "):
+        raise create_credentials_exception()
+    
+    token = authorization.split(" ")[1]
+    user_id_str = verify_token(token)
+    
+    if not user_id_str:
+        raise create_credentials_exception()
+    
+    try:
+        user_id = uuid.UUID(user_id_str)
+        return user_id
+    except ValueError:
+        raise create_credentials_exception()
+
+
+async def ensure_demo_user_exists(db: AsyncSession) -> None:
+    """
+    Ensure demo user exists in database for testing.
+    This should only be called in development/testing environments.
+    """
+    try:
+        from app.models.user import User
+        
+        # Check if demo user exists
+        stmt = select(User).where(User.id == DEMO_USER_ID)
+        result = await db.execute(stmt)
+        existing_user = result.scalar_one_or_none()
+        
+        if not existing_user:
+            # Create demo user
+            demo_user = User(
+                id=DEMO_USER_ID,
+                email="demo@tradeanalytics.local",
+                full_name="Demo User",
+                is_active=True,
+                robinhood_username="demo_user"
+            )
+            db.add(demo_user)
+            await db.commit()
+            logger.info(f"Created demo user with ID: {DEMO_USER_ID}")
+        else:
+            logger.debug(f"Demo user already exists with ID: {DEMO_USER_ID}")
+            
+    except Exception as e:
+        logger.error(f"Error ensuring demo user exists: {str(e)}")
+        # Don't raise - this is non-critical for testing

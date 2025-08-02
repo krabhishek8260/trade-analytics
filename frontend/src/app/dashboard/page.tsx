@@ -208,6 +208,8 @@ function OptionsTab({ options, greeks, formatCurrency, formatPercent }: {
   formatPercent: (value: number) => string
 }) {
   const [optionsExpanded, setOptionsExpanded] = useState(false)
+  const [symbolsExpanded, setSymbolsExpanded] = useState(false)
+  const [yearlyExpanded, setYearlyExpanded] = useState(false)
   
   if (!options || options.positions.length === 0) {
     return (
@@ -218,10 +220,27 @@ function OptionsTab({ options, greeks, formatCurrency, formatPercent }: {
     )
   }
 
+  // Extract P&L analytics data
+  const pnlAnalytics = options.pnl_analytics || {
+    total_pnl: options.total_return || 0,
+    realized_pnl: 0,
+    unrealized_pnl: options.total_return || 0,
+    total_trades: options.total_positions || 0,
+    realized_trades: 0,
+    open_positions: options.total_positions || 0,
+    win_rate: options.win_rate || 0,
+    largest_winner: 0,
+    largest_loser: 0,
+    avg_trade_pnl: 0
+  }
+
+  const yearlyPerformance = options.yearly_performance || []
+  const topSymbols = options.top_symbols || []
+
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-semibold mb-4">Options Positions ({options.total_positions})</h2>
+        <h2 className="text-xl font-semibold mb-4">Options Portfolio ({options.total_positions} positions)</h2>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           <InteractiveMetricCard
             title="Total Value"
@@ -230,7 +249,7 @@ function OptionsTab({ options, greeks, formatCurrency, formatPercent }: {
             metricType="total_value"
           />
           <InteractiveMetricCard
-            title="Total Return"
+            title="Current P&L"
             value={options.total_return}
             subtitle={formatPercent(options.total_return_percent)}
             isPositive={options.total_return >= 0}
@@ -249,6 +268,147 @@ function OptionsTab({ options, greeks, formatCurrency, formatPercent }: {
           </div>
         </div>
       </div>
+
+      {/* Enhanced P&L Analytics Section */}
+      <div>
+        <h3 className="text-lg font-medium mb-4">P&L Analytics</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="bg-muted/50 rounded-lg p-4">
+            <h4 className="text-sm font-medium text-muted-foreground mb-1">Total P&L</h4>
+            <p className={`text-xl font-bold ${pnlAnalytics.total_pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {formatCurrency(pnlAnalytics.total_pnl)}
+            </p>
+            <p className="text-xs text-muted-foreground">All-time performance</p>
+          </div>
+          <div className="bg-muted/50 rounded-lg p-4">
+            <h4 className="text-sm font-medium text-muted-foreground mb-1">Realized P&L</h4>
+            <p className={`text-xl font-bold ${pnlAnalytics.realized_pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {formatCurrency(pnlAnalytics.realized_pnl)}
+            </p>
+            <p className="text-xs text-muted-foreground">{pnlAnalytics.realized_trades} closed trades</p>
+          </div>
+          <div className="bg-muted/50 rounded-lg p-4">
+            <h4 className="text-sm font-medium text-muted-foreground mb-1">Unrealized P&L</h4>
+            <p className={`text-xl font-bold ${pnlAnalytics.unrealized_pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {formatCurrency(pnlAnalytics.unrealized_pnl)}
+            </p>
+            <p className="text-xs text-muted-foreground">{pnlAnalytics.open_positions} open positions</p>
+          </div>
+          <div className="bg-muted/50 rounded-lg p-4">
+            <h4 className="text-sm font-medium text-muted-foreground mb-1">Win Rate</h4>
+            <p className="text-xl font-bold">{formatPercent(pnlAnalytics.win_rate)}</p>
+            <p className="text-xs text-muted-foreground">{pnlAnalytics.total_trades} total trades</p>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-muted/50 rounded-lg p-4">
+            <h4 className="text-sm font-medium text-muted-foreground mb-1">Largest Winner</h4>
+            <p className="text-lg font-bold text-green-600">
+              {formatCurrency(pnlAnalytics.largest_winner)}
+            </p>
+          </div>
+          <div className="bg-muted/50 rounded-lg p-4">
+            <h4 className="text-sm font-medium text-muted-foreground mb-1">Largest Loser</h4>
+            <p className="text-lg font-bold text-red-600">
+              {formatCurrency(pnlAnalytics.largest_loser)}
+            </p>
+          </div>
+          <div className="bg-muted/50 rounded-lg p-4">
+            <h4 className="text-sm font-medium text-muted-foreground mb-1">Avg Trade P&L</h4>
+            <p className={`text-lg font-bold ${pnlAnalytics.avg_trade_pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {formatCurrency(pnlAnalytics.avg_trade_pnl)}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Yearly Performance Section */}
+      {yearlyPerformance.length > 0 && (
+        <div>
+          <button
+            onClick={() => setYearlyExpanded(!yearlyExpanded)}
+            className="flex items-center justify-between w-full p-4 bg-muted/50 rounded-lg hover:bg-muted transition-colors mb-3"
+          >
+            <h3 className="text-lg font-medium">Yearly Performance ({yearlyPerformance.length} years)</h3>
+            <svg
+              className={`w-5 h-5 transition-transform ${yearlyExpanded ? 'rotate-180' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m19 9-7 7-7-7" />
+            </svg>
+          </button>
+          {yearlyExpanded && (
+            <div className="space-y-2">
+              {yearlyPerformance.map((year, index) => (
+                <div key={index} className="flex justify-between items-center p-4 bg-muted/50 rounded-lg">
+                  <div>
+                    <span className="font-medium text-lg">{year.year}</span>
+                    <div className="text-sm text-muted-foreground">
+                      {year.trade_count} trades • {formatPercent(year.win_rate)} win rate
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className={`font-medium text-lg ${year.realized_pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatCurrency(year.realized_pnl)}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {year.winning_trades}W / {year.losing_trades}L
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Symbol Performance Section */}
+      {topSymbols.length > 0 && (
+        <div>
+          <button
+            onClick={() => setSymbolsExpanded(!symbolsExpanded)}
+            className="flex items-center justify-between w-full p-4 bg-muted/50 rounded-lg hover:bg-muted transition-colors mb-3"
+          >
+            <h3 className="text-lg font-medium">Top Performing Symbols ({topSymbols.length})</h3>
+            <svg
+              className={`w-5 h-5 transition-transform ${symbolsExpanded ? 'rotate-180' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m19 9-7 7-7-7" />
+            </svg>
+          </button>
+          {symbolsExpanded && (
+            <div className="space-y-2">
+              {topSymbols.slice(0, 10).map((symbol, index) => (
+                <div key={index} className="flex justify-between items-center p-4 bg-muted/50 rounded-lg">
+                  <div>
+                    <span className="font-medium text-lg">{symbol.symbol}</span>
+                    <div className="text-sm text-muted-foreground">
+                      {symbol.total_trades} trades • {formatPercent(symbol.win_rate)} win rate
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      R: {formatCurrency(symbol.realized_pnl)} | U: {formatCurrency(symbol.unrealized_pnl)}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className={`font-medium text-lg ${symbol.total_pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatCurrency(symbol.total_pnl)}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      Avg: {formatCurrency(symbol.avg_trade_pnl)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {greeks && (
         <div>
@@ -378,9 +538,12 @@ function OptionsTab({ options, greeks, formatCurrency, formatPercent }: {
             </div>
           ))}
           {!optionsExpanded && options.positions.length > 5 && (
-            <div className="text-center text-sm text-muted-foreground pt-2">
-              Click above to show {options.positions.length - 5} more positions
-            </div>
+            <button
+              onClick={() => setOptionsExpanded(true)}
+              className="w-full text-center text-sm text-primary hover:text-primary/80 pt-2 py-2 rounded hover:bg-muted/30 transition-colors"
+            >
+              Show {options.positions.length - 5} more positions
+            </button>
           )}
         </div>
       </div>
@@ -706,6 +869,17 @@ export default function Dashboard() {
                         )}
                       </button>
                     ))}
+                    
+                    {/* P&L Analytics Link */}
+                    <a
+                      href="/dashboard/pnl"
+                      className="border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors"
+                    >
+                      P&L Analytics
+                      <span className="ml-1 text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full px-2 py-0.5">
+                        NEW
+                      </span>
+                    </a>
                   </nav>
                 </div>
 

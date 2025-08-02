@@ -118,26 +118,34 @@
     @apply text-muted-foreground;
   }
 
-  /* Card hover effects */
+  /* Card styles */
   .card-hover {
     @apply transition-all duration-200 hover:shadow-md hover:scale-[1.02];
   }
 
-  /* Button variants */
+  .summary-card {
+    @apply bg-muted/50 rounded-lg p-4;
+  }
+
+  /* Button base style */
+  .btn-base {
+    @apply inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none;
+  }
+
   .btn-primary {
-    @apply bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none;
+    @apply btn-base bg-primary text-primary-foreground hover:bg-primary/90;
   }
 
   .btn-secondary {
-    @apply bg-secondary text-secondary-foreground hover:bg-secondary/80 inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none;
+    @apply btn-base bg-secondary text-secondary-foreground hover:bg-secondary/80;
   }
 
   .btn-outline {
-    @apply border border-input bg-background hover:bg-accent hover:text-accent-foreground inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none;
+    @apply btn-base border border-input bg-background hover:bg-accent hover:text-accent-foreground;
   }
 
   .btn-ghost {
-    @apply hover:bg-accent hover:text-accent-foreground inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none;
+    @apply btn-base hover:bg-accent hover:text-accent-foreground;
   }
 
   /* Form styles */
@@ -149,47 +157,25 @@
     @apply text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70;
   }
 
-  .form-error {
-    @apply text-sm font-medium text-destructive;
+  /* Utility classes */
+  .text-responsive {
+    @apply text-sm sm:text-base lg:text-lg;
   }
 
-  /* Custom animations */
-  .fade-in {
-    animation: fade-in 0.5s ease-out;
-  }
-
-  .slide-in {
-    animation: slide-in 0.3s ease-out;
-  }
-
-  /* Responsive text sizes */
-  .text-responsive-xs {
-    @apply text-xs sm:text-sm;
-  }
-
-  .text-responsive-sm {
-    @apply text-sm sm:text-base;
-  }
-
-  .text-responsive-base {
-    @apply text-base sm:text-lg;
-  }
-
-  .text-responsive-lg {
-    @apply text-lg sm:text-xl;
-  }
-
-  .text-responsive-xl {
-    @apply text-xl sm:text-2xl;
-  }
-
-  /* Grid responsive */
   .grid-responsive {
-    @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4;
+    @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4;
   }
 
   .grid-responsive-wide {
     @apply grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6;
+  }
+
+  .chain-indicator {
+    @apply text-xs px-2 py-1 rounded font-medium;
+  }
+
+  .position-border {
+    @apply border-l-4 pl-3;
   }
 }
 

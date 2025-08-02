@@ -96,9 +96,12 @@ export default function FilteredPositionsSection({
                 </div>
               ))}
               {!positionsExpanded && filteredPositions.length > 5 && (
-                <div className="text-center text-sm text-muted-foreground pt-2">
-                  Click above to show {filteredPositions.length - 5} more positions
-                </div>
+                <button
+                  onClick={() => setPositionsExpanded(true)}
+                  className="w-full text-center text-sm text-primary hover:text-primary/80 pt-2 py-2 rounded hover:bg-muted/30 transition-colors"
+                >
+                  Show {filteredPositions.length - 5} more positions
+                </button>
               )}
             </div>
           </>

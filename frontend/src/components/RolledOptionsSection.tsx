@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { getRolledOptionsChains, OptionsChain, RolledOptionsResponse, OptionsOrder } from '@/lib/api'
+import { ChainSummary } from './ui/ChainSummary'
 
 interface RolledOptionsSectionProps {
   formatCurrency: (value: number) => string
@@ -154,36 +155,11 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
         <h3 className="text-lg font-medium mb-4">Rolled Options Chains</h3>
         
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-muted/50 rounded-lg p-4">
-            <h4 className="text-sm font-medium text-muted-foreground mb-1">Total Chains</h4>
-            <p className="text-2xl font-bold">{rolledOptions.summary.total_chains}</p>
-            <p className="text-xs text-muted-foreground">
-              {rolledOptions.summary.active_chains} active, {rolledOptions.summary.closed_chains} closed
-            </p>
-          </div>
-          <div className="bg-muted/50 rounded-lg p-4">
-            <h4 className="text-sm font-medium text-muted-foreground mb-1">Total Orders</h4>
-            <p className="text-2xl font-bold">{rolledOptions.summary.total_orders}</p>
-            <p className="text-xs text-muted-foreground">
-              Avg: {rolledOptions.summary.avg_orders_per_chain.toFixed(1)} per chain
-            </p>
-          </div>
-          <div className="bg-muted/50 rounded-lg p-4">
-            <h4 className="text-sm font-medium text-muted-foreground mb-1">Net Premium</h4>
-            <p className={`text-2xl font-bold ${rolledOptions.summary.net_premium_collected >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {formatCurrency(rolledOptions.summary.net_premium_collected)}
-            </p>
-            <p className="text-xs text-muted-foreground">Collected</p>
-          </div>
-          <div className="bg-muted/50 rounded-lg p-4">
-            <h4 className="text-sm font-medium text-muted-foreground mb-1">Total P&L</h4>
-            <p className={`text-2xl font-bold ${rolledOptions.summary.total_pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {formatCurrency(rolledOptions.summary.total_pnl)}
-            </p>
-            <p className="text-xs text-muted-foreground">Realized + Unrealized</p>
-          </div>
-        </div>
+        <ChainSummary 
+          summary={rolledOptions.summary} 
+          formatCurrency={formatCurrency}
+          className="mb-6"
+        />
 
         {/* Performance Warning */}
         {daysBack > 90 && (
@@ -320,7 +296,7 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
                   <div className="flex-1">
                     <div className="flex items-center space-x-3 mb-2">
                       <span className="font-semibold text-lg">{chain.underlying_symbol}</span>
-                      <span className={`text-xs px-2 py-1 rounded ${getStatusColor(chain.status)}`}>
+                      <span className={`chain-indicator ${getStatusColor(chain.status)}`}>
                         {chain.status?.toUpperCase() || 'UNKNOWN'}
                       </span>
                       <span className="text-sm text-muted-foreground">
@@ -346,13 +322,13 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
                       </div>
                       <div>
                         <span className="text-muted-foreground">Net Premium:</span>
-                        <span className={`font-medium ml-1 ${chain.net_premium >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        <span className={`font-medium ml-1 ${chain.net_premium >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                           {formatCurrency(chain.net_premium)}
                         </span>
                       </div>
                       <div>
                         <span className="text-muted-foreground">Total P&L:</span>
-                        <span className={`font-medium ml-1 ${chain.total_pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        <span className={`font-medium ml-1 ${chain.total_pnl >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                           {formatCurrency(chain.total_pnl)}
                         </span>
                       </div>
@@ -373,80 +349,115 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
               {expandedChains.has(chain.chain_id) && (
                 <div className="border-t border-border p-4 bg-background/50">
                   <div className="space-y-4">
-                    {/* Current Position - Show from chain analysis if available */}
-                    {chain.status === 'active' && (
-                      <div>
-                        <h4 className="font-medium mb-2">Latest Position</h4>
-                        <div className="bg-muted/30 rounded p-3 text-sm">
-                          {(() => {
-                            // Try to get latest position from chain analysis first, fallback to latest order
-                            const latestPosition = (chain as any).latest_position
-                            if (latestPosition) {
-                              return (
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-                                  <div>
-                                    <span className="text-muted-foreground">Strike:</span>
-                                    <span className="font-medium ml-1">${latestPosition.strike_price}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Type:</span>
-                                    <span className="font-medium ml-1">{latestPosition.option_type}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Expiry:</span>
-                                    <span className="font-medium ml-1">{latestPosition.expiration_date}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Side:</span>
-                                    <span className="font-medium ml-1">{latestPosition.side}</span>
-                                    <span className="text-xs text-muted-foreground ml-1">
-                                      ({latestPosition.quantity} contracts)
-                                    </span>
-                                  </div>
-                                </div>
-                              )
-                            } else if (chain.orders && chain.orders.length > 0) {
-                              // Fallback to latest order
-                              const latestOrder = chain.orders[chain.orders.length - 1]
-                              return (
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-                                  <div>
-                                    <span className="text-muted-foreground">Strike:</span>
-                                    <span className="font-medium ml-1">${latestOrder.strike_price}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Type:</span>
-                                    <span className="font-medium ml-1">{latestOrder.option_type?.toUpperCase() || 'UNKNOWN'}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Expiry:</span>
-                                    <span className="font-medium ml-1">{latestOrder.expiration_date}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Side:</span>
-                                    <span className="font-medium ml-1">{latestOrder.transaction_side}</span>
-                                  </div>
-                                </div>
-                              )
-                            } else {
-                              return <div className="text-muted-foreground">No position data available</div>
-                            }
-                          })()}
-                        </div>
-                      </div>
-                    )}
 
                     {/* Orders History */}
                     <div>
-                      <h4 className="font-medium mb-2">Orders History ({chain.orders.length})</h4>
+                      <h4 className="font-medium mb-2">
+                        Orders History ({chain.orders.length})
+                        {chain.status === 'active' && (
+                          <span className="ml-2 text-xs px-2 py-1 rounded bg-green-100 text-green-800">
+                            ACTIVE CHAIN - DEBUG
+                          </span>
+                        )}
+                      </h4>
                       <div className="space-y-2">
-                        {chain.orders.map((order, index) => (
+                        {/* Debug: Log full chain data for PLTR */}
+                        {chain.underlying_symbol === 'PLTR' && (() => {
+                          console.log('PLTR Full Chain:', chain)
+                          return null
+                        })()}
+                        
+                        {chain.orders.map((order, index) => {
+                          // Use backend's chain analysis to determine latest position
+                          let isLatestPosition = false
+                          
+                          if (chain.status === 'active') {
+                            // Check if backend provided latest_position data in various locations
+                            const latestPosition = (chain as any).latest_position || 
+                                                  (chain as any).chain_data?.latest_position ||
+                                                  (chain as any).current_position
+                            
+                            if (latestPosition) {
+                              // Match this order against the latest position data
+                              if (order.roll_details) {
+                                // For roll orders, check if the open position matches latest_position
+                                const openPos = order.roll_details.open_position
+                                isLatestPosition = openPos && 
+                                  openPos.strike_price === latestPosition.strike_price &&
+                                  openPos.expiration_date === latestPosition.expiration_date &&
+                                  openPos.option_type === latestPosition.option_type
+                              } else {
+                                // For single orders, check if this order matches latest_position
+                                isLatestPosition = order.strike_price === latestPosition.strike_price &&
+                                  order.expiration_date === latestPosition.expiration_date &&
+                                  order.option_type === latestPosition.option_type
+                              }
+                            } else {
+                              // Smart fallback: Find the actual current position
+                              // For PLTR 110 call example, we need to find which order represents the current holding
+                              
+                              // Get all the positions that could be current (from roll opens or single opens)
+                              const potentialCurrentPositions = chain.orders.map((o, i) => {
+                                if (o.roll_details) {
+                                  // For rolls, the open position is what we're currently holding
+                                  return {
+                                    index: i,
+                                    strike: o.roll_details.open_position.strike_price,
+                                    expiry: o.roll_details.open_position.expiration_date,
+                                    type: o.roll_details.open_position.option_type,
+                                    date: new Date(o.created_at)
+                                  }
+                                } else if (o.position_effect === 'open') {
+                                  // For single opens, this could be current if not closed later
+                                  return {
+                                    index: i,
+                                    strike: o.strike_price,
+                                    expiry: o.expiration_date,
+                                    type: o.option_type,
+                                    date: new Date(o.created_at)
+                                  }
+                                }
+                                return null
+                              }).filter(Boolean)
+                              
+                              // Find the most recent position (latest date)
+                              const currentPosition = potentialCurrentPositions.sort((a, b) => 
+                                (b?.date?.getTime() || 0) - (a?.date?.getTime() || 0)
+                              )[0]
+                              
+                              isLatestPosition = Boolean(currentPosition && index === currentPosition.index)
+                            }
+                          }
+                          
+                          // Debug: Log chain info for PLTR specifically
+                          if (chain.underlying_symbol === 'PLTR') {
+                            const latestPosition = (chain as any).latest_position
+                            console.log('PLTR Chain debug:', {
+                              orderIndex: index,
+                              isLatestPosition,
+                              hasRollDetails: !!order.roll_details,
+                              positionEffect: order.position_effect,
+                              orderStrike: order.strike_price,
+                              orderExpiry: order.expiration_date,
+                              rollOpenStrike: order.roll_details?.open_position?.strike_price,
+                              rollOpenExpiry: order.roll_details?.open_position?.expiration_date,
+                              rollOpenType: order.roll_details?.open_position?.option_type,
+                              chainLatestPosition: latestPosition
+                            })
+                          }
+                          
+                          return (
                           <div key={order.order_id} className="bg-muted/30 rounded p-3 text-sm">
                             <div className="flex justify-between items-start mb-2">
                               <div className="flex items-center space-x-2">
                                 <span className="font-medium">Order #{index + 1}</span>
+                                {isLatestPosition && (
+                                  <span className="text-xs px-2 py-1 rounded bg-primary/10 text-primary border border-primary/20 font-medium">
+                                    🔥 LATEST POSITION
+                                  </span>
+                                )}
                                 <span className={`text-xs px-2 py-1 rounded ${
-                                  order.direction === 'credit' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                                  order.direction === 'credit' ? 'bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20'
                                 }`}>
                                   {order.direction?.toUpperCase() || 'UNKNOWN'}
                                 </span>
@@ -455,13 +466,13 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
                                 </span>
                                 {/* Show roll indicator if this is a roll transaction */}
                                 {order.roll_details && (
-                                  <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-800">
+                                  <span className="text-xs px-2 py-1 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
                                     ROLL
                                   </span>
                                 )}
                               </div>
                               <div className={`font-medium ${
-                                order.direction === 'credit' ? 'text-green-600' : 'text-red-600'
+                                order.direction === 'credit' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
                               }`}>
                                 {order.direction === 'credit' ? '+' : '-'}{formatCurrency(order.processed_premium)}
                               </div>
@@ -471,8 +482,8 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
                             {order.roll_details ? (
                               <div className="space-y-3">
                                 {/* Close Position */}
-                                <div className="border-l-4 border-red-500 pl-3">
-                                  <div className="text-muted-foreground text-xs mb-1 text-red-700">CLOSE POSITION</div>
+                                <div className="position-border border-red-500">
+                                  <div className="text-xs mb-1 text-red-600 dark:text-red-400 font-medium">CLOSE POSITION</div>
                                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div>
                                       <div className="text-muted-foreground text-xs mb-1">POSITION</div>
@@ -502,8 +513,17 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
                                 </div>
 
                                 {/* Open Position */}
-                                <div className="border-l-4 border-green-500 pl-3">
-                                  <div className="text-muted-foreground text-xs mb-1 text-green-700">OPEN POSITION</div>
+                                <div className="position-border border-green-500">
+                                  <div className="flex items-center space-x-2 mb-1">
+                                    <div className="text-xs text-green-600 dark:text-green-400 font-medium">
+                                      OPEN POSITION
+                                    </div>
+                                    {isLatestPosition && (
+                                      <span className="text-xs px-2 py-1 rounded bg-primary/10 text-primary border border-primary/20 font-medium">
+                                        LATEST POSITION
+                                      </span>
+                                    )}
+                                  </div>
                                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div>
                                       <div className="text-muted-foreground text-xs mb-1">POSITION</div>
@@ -533,9 +553,9 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
                                 </div>
 
                                 {/* Roll Summary */}
-                                <div className="bg-blue-50 rounded p-2 text-xs">
-                                  <div className="font-medium text-blue-800 mb-1">Roll Summary:</div>
-                                  <div className="text-blue-700">
+                                <div className="bg-muted/50 border border-border rounded p-2 text-xs">
+                                  <div className="font-medium text-foreground mb-1">Roll Summary:</div>
+                                  <div className="text-muted-foreground">
                                     Rolled from ${order.roll_details.close_position.strike_price} {order.roll_details.close_position.option_type} ({order.roll_details.close_position.expiration_date}) 
                                     to ${order.roll_details.open_position.strike_price} {order.roll_details.open_position.option_type} ({order.roll_details.open_position.expiration_date})
                                   </div>
@@ -546,11 +566,11 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
                               <div>
                                 {/* Add indicator for opening orders */}
                                 {order.position_effect === 'open' && (
-                                  <div className="border-l-4 border-blue-500 pl-3 mb-3">
-                                    <div className="text-muted-foreground text-xs mb-1 text-blue-700">OPENING ORDER</div>
-                                    <div className="bg-blue-50 rounded p-2 text-xs">
-                                      <div className="font-medium text-blue-800 mb-1">Chain Start:</div>
-                                      <div className="text-blue-700">
+                                  <div className="position-border border-blue-500 mb-3">
+                                    <div className="text-xs mb-1 text-blue-600 dark:text-blue-400 font-medium">OPENING ORDER</div>
+                                    <div className="bg-muted/50 border border-border rounded p-2 text-xs">
+                                      <div className="font-medium text-foreground mb-1">Chain Start:</div>
+                                      <div className="text-muted-foreground">
                                         This is the original opening order that started the options chain.
                                       </div>
                                     </div>
@@ -559,11 +579,11 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
                                 
                                 {/* Add indicator for closing orders */}
                                 {order.position_effect === 'close' && (
-                                  <div className="border-l-4 border-red-500 pl-3 mb-3">
-                                    <div className="text-muted-foreground text-xs mb-1 text-red-700">CLOSING ORDER</div>
-                                    <div className="bg-red-50 rounded p-2 text-xs">
-                                      <div className="font-medium text-red-800 mb-1">Chain End:</div>
-                                      <div className="text-red-700">
+                                  <div className="position-border border-red-500 mb-3">
+                                    <div className="text-xs mb-1 text-red-600 dark:text-red-400 font-medium">CLOSING ORDER</div>
+                                    <div className="bg-muted/50 border border-border rounded p-2 text-xs">
+                                      <div className="font-medium text-foreground mb-1">Chain End:</div>
+                                      <div className="text-muted-foreground">
                                         This order closes the final position and ends the options chain.
                                       </div>
                                     </div>
@@ -602,7 +622,8 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
                               </div>
                             )}
                           </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     </div>
 
@@ -613,25 +634,25 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                           <div>
                             <span className="text-muted-foreground">Credits Collected:</span>
-                            <span className="font-medium ml-1 text-green-600">
+                            <span className="font-medium ml-1 text-green-600 dark:text-green-400">
                               {formatCurrency(chain.total_credits_collected)}
                             </span>
                           </div>
                           <div>
                             <span className="text-muted-foreground">Debits Paid:</span>
-                            <span className="font-medium ml-1 text-red-600">
+                            <span className="font-medium ml-1 text-red-600 dark:text-red-400">
                               {formatCurrency(chain.total_debits_paid)}
                             </span>
                           </div>
                           <div>
                             <span className="text-muted-foreground">Net Premium:</span>
-                            <span className={`font-medium ml-1 ${chain.net_premium >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            <span className={`font-medium ml-1 ${chain.net_premium >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                               {formatCurrency(chain.net_premium)}
                             </span>
                           </div>
                           <div>
                             <span className="text-muted-foreground">Total P&L:</span>
-                            <span className={`font-medium ml-1 ${chain.total_pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            <span className={`font-medium ml-1 ${chain.total_pnl >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                               {formatCurrency(chain.total_pnl)}
                             </span>
                           </div>
