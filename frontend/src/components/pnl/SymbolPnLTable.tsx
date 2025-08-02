@@ -1,5 +1,6 @@
 import React from 'react';
 import { ArrowUpDown, ArrowUp, ArrowDown, TrendingUp, TrendingDown } from 'lucide-react';
+import { SymbolLogo } from '@/components/ui/SymbolLogo';
 
 interface SymbolPnL {
   symbol: string;
@@ -114,9 +115,12 @@ export const SymbolPnLTable: React.FC<SymbolPnLTableProps> = ({
               >
                 <td className="p-3">
                   <div className="flex items-center">
-                    <span className="font-semibold text-blue-600 dark:text-blue-400">
-                      {symbol.symbol}
-                    </span>
+                    <SymbolLogo 
+                      symbol={symbol.symbol} 
+                      size="md" 
+                      showText={true}
+                      className="text-blue-600 dark:text-blue-400"
+                    />
                   </div>
                 </td>
                 <td className={`p-3 font-medium ${getPnLColor(symbol.total_pnl)}`}>

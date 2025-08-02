@@ -1,4 +1,5 @@
 import { HistoricalOptionsOrder } from '@/lib/api'
+import { SymbolLogo } from '@/components/ui/SymbolLogo'
 
 interface TradingHistorySectionProps {
   orders: HistoricalOptionsOrder[]
@@ -78,7 +79,12 @@ export default function TradingHistorySection({
                 <div className="flex justify-between items-start">
                   <div>
                     <div className="flex items-center space-x-2 mb-1">
-                      <span className="font-medium text-lg">{order.underlying_symbol || 'Unknown'}</span>
+                      <SymbolLogo 
+                        symbol={order.underlying_symbol || 'Unknown'} 
+                        size="lg" 
+                        showText={true}
+                        className="font-medium text-lg"
+                      />
                       <span className={`text-xs px-2 py-1 rounded ${
                         order.state === 'filled' ? 'bg-green-100 text-green-800' :
                         order.state === 'cancelled' ? 'bg-red-100 text-red-800' :

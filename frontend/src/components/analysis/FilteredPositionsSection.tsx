@@ -1,4 +1,5 @@
 import { OptionPosition } from '@/lib/api'
+import { SymbolLogo } from '@/components/ui/SymbolLogo'
 
 interface FilteredPositionsSectionProps {
   filters: {
@@ -76,7 +77,12 @@ export default function FilteredPositionsSection({
                 <div key={index} className="flex justify-between items-center p-4 bg-muted/50 rounded-lg">
                   <div>
                     <div className="flex items-center space-x-2">
-                      <span className="font-medium text-lg">{position.underlying_symbol}</span>
+                      <SymbolLogo 
+                        symbol={position.underlying_symbol} 
+                        size="lg" 
+                        showText={true}
+                        className="font-medium text-lg"
+                      />
                       <span className={`text-xs px-2 py-1 rounded ${
                         position.strategy.includes('BUY') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                       }`}>

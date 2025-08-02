@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, TrendingUp, TrendingDown } from 'lucide-react'
 import { BreakdownComponent } from '@/lib/api'
+import { SymbolLogo } from '@/components/ui/SymbolLogo'
 
 interface BreakdownComponentsProps {
   components: BreakdownComponent[]
@@ -125,6 +126,11 @@ export function BreakdownComponents({
                           {/* Position Details */}
                           <div className="flex-1">
                             <div className="flex items-center space-x-2">
+                              <SymbolLogo 
+                                symbol={position.underlying_symbol} 
+                                size="sm" 
+                                showText={false}
+                              />
                               <span className="font-medium">
                                 {position.underlying_symbol}
                               </span>

@@ -19,6 +19,7 @@ python-multipart==0.0.6
 redis==4.3.4
 # aioredis==2.0.1
 httpx==0.25.2
+aiohttp==3.9.1
 
 # Background job scheduling
 apscheduler==3.11.0

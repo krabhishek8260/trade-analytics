@@ -931,95 +931,97 @@ async def get_closed_options_history(
     sort_by: Optional[str] = Query("close_date", description="Sort by field"),
     sort_order: str = Query("desc", regex="^(asc|desc)$", description="Sort order"),
     include_chains: bool = Query(True, description="Include chain information for closed positions"),
-    rh_service: RobinhoodService = Depends(get_robinhood_service),
+    current_user_id: UUID = Depends(get_current_user_id),
     db = Depends(get_db)
 ):
-    """Get closed options positions with chain information"""
+    """Get closed options positions with chain information from pre-computed database"""
     try:
-        # Get closed options from enhanced rolled options service
-        from app.services.rolled_options_chain_detector import RolledOptionsChainDetector
+        # Import the RolledOptionsChain model
+        from app.models.rolled_options_chain import RolledOptionsChain
+        from sqlalchemy import select, desc, and_
         
-        # Use the enhanced chain detector for better historical data
-        detector = RolledOptionsChainDetector()
-        
-        # Get all orders for the specified period
-        try:
-            since_time = datetime.now() - timedelta(days=days_back or 365)
-            orders_result = await rh_service.get_options_orders(limit=1000, since_time=since_time)
-            
-            if not orders_result.get("success", False):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=orders_result.get("message", "Failed to fetch options orders")
-                )
-            
-            orders = orders_result["data"]
-        except Exception as e:
-            # If not authenticated, return empty result
-            logger.warning(f"Options history endpoint error: {str(e)}")
-            return ListResponse(
-                data=[],
-                count=0,
-                total=0
+        # Build query for closed chains only
+        query = select(RolledOptionsChain).where(
+            and_(
+                RolledOptionsChain.user_id == str(current_user_id),
+                RolledOptionsChain.status == "closed"
             )
+        )
         
-        # Filter by symbol if specified
+        # Apply filters
         if underlying_symbol:
-            orders = [order for order in orders if order.get("underlying_symbol", "").upper() == underlying_symbol.upper()]
+            query = query.where(RolledOptionsChain.underlying_symbol == underlying_symbol.upper())
         
-        # Use enhanced chain detection
-        chains_result = await detector.detect_chains(orders)
+        # Apply sorting
+        sort_field = {
+            "close_date": RolledOptionsChain.last_activity_date,
+            "start_date": RolledOptionsChain.start_date,
+            "total_pnl": RolledOptionsChain.total_pnl,
+            "net_premium": RolledOptionsChain.net_premium,
+            "roll_count": RolledOptionsChain.roll_count
+        }.get(sort_by, RolledOptionsChain.last_activity_date)
         
-        if not chains_result.get("success", False):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=chains_result.get("message", "Failed to detect chains")
-            )
+        if sort_order == "desc":
+            query = query.order_by(desc(sort_field))
+        else:
+            query = query.order_by(sort_field)
         
-        chains = chains_result.get("chains", [])
+        # Apply limit
+        query = query.limit(limit)
         
-        # Filter for closed chains only
-        closed_chains = [chain for chain in chains if chain.get("status") == "closed"]
+        # Execute query
+        result = await db.execute(query)
+        closed_chains = result.scalars().all()
         
         # Convert chains to closed positions format
         closed_positions = []
         for chain in closed_chains:
+            # Extract chain data
+            chain_data = chain.chain_data or {}
+            orders = chain_data.get("orders", [])
+            
             # Create a closed position entry from the chain
             closed_position = {
-                "underlying_symbol": chain.get("underlying_symbol"),
-                "chain_id": chain.get("chain_id"),
-                "initial_strategy": chain.get("initial_strategy"),
-                "start_date": chain.get("start_date"),
-                "close_date": chain.get("last_activity_date"),
-                "total_orders": len(chain.get("orders", [])),
-                "roll_count": chain.get("roll_count", 0),
-                "total_credits_collected": chain.get("total_credits_collected", 0),
-                "total_debits_paid": chain.get("total_debits_paid", 0),
-                "net_premium": chain.get("net_premium", 0),
-                "total_pnl": chain.get("total_pnl", 0),
+                "underlying_symbol": chain.underlying_symbol,
+                "chain_id": chain.chain_id,
+                "initial_strategy": chain.initial_strategy,
+                "start_date": chain.start_date.isoformat() if chain.start_date else None,
+                "close_date": chain.last_activity_date.isoformat() if chain.last_activity_date else None,
+                "total_orders": len(orders),
+                "roll_count": chain.roll_count,
+                "total_credits_collected": chain.total_credits_collected,
+                "total_debits_paid": chain.total_debits_paid,
+                "net_premium": float(chain.net_premium) if chain.net_premium else 0,
+                "total_pnl": float(chain.total_pnl) if chain.total_pnl else 0,
                 "final_strike": None,
                 "final_expiry": None,
                 "final_option_type": None,
                 "days_held": None,
-                "win_loss": "win" if chain.get("total_pnl", 0) > 0 else "loss",
-                "enhanced_chain": chain.get("enhanced", False),
-                "chain_type": chain.get("chain_type", "regular")
+                "win_loss": "win" if (chain.total_pnl or 0) > 0 else "loss",
+                "enhanced_chain": chain_data.get("enhanced", False),
+                "chain_type": chain_data.get("chain_type", "regular")
             }
             
             # Get final position details from the last order
-            orders = chain.get("orders", [])
             if orders:
                 last_order = orders[-1]
-                closed_position["final_strike"] = last_order.get("strike_price")
-                closed_position["final_expiry"] = last_order.get("expiration_date")
-                closed_position["final_option_type"] = last_order.get("option_type")
+                # Try to get final position from roll_details.open_position
+                if "roll_details" in last_order and "open_position" in last_order["roll_details"]:
+                    open_pos = last_order["roll_details"]["open_position"]
+                    closed_position["final_strike"] = open_pos.get("strike_price")
+                    closed_position["final_expiry"] = open_pos.get("expiration_date")
+                    closed_position["final_option_type"] = open_pos.get("option_type")
+                else:
+                    # Fallback to order details
+                    closed_position["final_strike"] = last_order.get("strike_price")
+                    closed_position["final_expiry"] = last_order.get("expiration_date")
+                    closed_position["final_option_type"] = last_order.get("option_type")
             
             # Calculate days held
-            if chain.get("start_date") and chain.get("last_activity_date"):
+            if chain.start_date and chain.last_activity_date:
                 try:
-                    start_date = datetime.fromisoformat(chain["start_date"].replace("Z", "+00:00"))
-                    end_date = datetime.fromisoformat(chain["last_activity_date"].replace("Z", "+00:00"))
-                    closed_position["days_held"] = (end_date - start_date).days
+                    days_held = (chain.last_activity_date - chain.start_date).days
+                    closed_position["days_held"] = days_held
                 except:
                     pass
             

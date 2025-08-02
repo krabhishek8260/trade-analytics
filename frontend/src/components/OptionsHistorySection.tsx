@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { getClosedOptionsHistory, ClosedOptionsPosition } from '@/lib/api'
+import { getRolledOptionsChains, OptionsChain } from '@/lib/api'
 
 interface OptionsHistorySectionProps {
   formatCurrency: (value: number) => string
@@ -14,25 +14,27 @@ export default function OptionsHistorySection({
   formatPercent, 
   onChainClick 
 }: OptionsHistorySectionProps) {
-  const [closedPositions, setClosedPositions] = useState<ClosedOptionsPosition[]>([])
+  const [closedChains, setClosedChains] = useState<OptionsChain[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [historyExpanded, setHistoryExpanded] = useState(false)
-  const [showChains, setShowChains] = useState(true)
+  const [showChainInfo, setShowChainInfo] = useState(true)
 
   useEffect(() => {
     const fetchClosedHistory = async () => {
       try {
         setLoading(true)
-        const data = await getClosedOptionsHistory({
+        setError(null)
+        
+        const response = await getRolledOptionsChains({
+          status: 'closed',
           limit: 100,
-          days_back: 365,
-          sort_by: 'close_date',
-          sort_order: 'desc',
-          include_chains: true
+          days_back: 365
         })
-        setClosedPositions(data)
+        
+        setClosedChains(response.chains || [])
       } catch (err) {
+        console.error('Error loading closed options history:', err)
         setError(err instanceof Error ? err.message : 'Failed to fetch closed options history')
       } finally {
         setLoading(false)
@@ -72,7 +74,7 @@ export default function OptionsHistorySection({
     )
   }
 
-  if (closedPositions.length === 0) {
+  if (closedChains.length === 0) {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between mb-3">
@@ -87,12 +89,20 @@ export default function OptionsHistorySection({
   }
 
   // Calculate summary statistics
-  const totalClosed = closedPositions.length
-  const totalPnl = closedPositions.reduce((sum, pos) => sum + pos.total_pnl, 0)
-  const winningTrades = closedPositions.filter(pos => pos.win_loss === 'win').length
+  const totalClosed = closedChains.length
+  const totalPnl = closedChains.reduce((sum, chain) => sum + (chain.total_pnl || 0), 0)
+  const winningTrades = closedChains.filter(chain => (chain.total_pnl || 0) > 0).length
   const winRate = totalClosed > 0 ? (winningTrades / totalClosed) * 100 : 0
-  const avgDaysHeld = closedPositions.reduce((sum, pos) => sum + (pos.days_held || 0), 0) / totalClosed
-  const enhancedChains = closedPositions.filter(pos => pos.enhanced_chain).length
+  const avgDaysHeld = closedChains.reduce((sum, chain) => {
+    if (chain.start_date && chain.last_activity_date) {
+      const start = new Date(chain.start_date)
+      const end = new Date(chain.last_activity_date)
+      return sum + Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
+    }
+    return sum
+  }, 0) / totalClosed
+  const enhancedChains = closedChains.filter(chain => chain.orders?.[0]?.legs?.length === 1).length
+  const chainsWithRolls = closedChains.filter(chain => (chain.roll_count || 0) > 0).length
 
   return (
     <div className="space-y-4">
@@ -118,14 +128,14 @@ export default function OptionsHistorySection({
         <div className="flex items-center space-x-2 bg-muted/50 rounded-lg p-3">
           <label className="text-sm font-medium text-muted-foreground">Show Chain Info</label>
           <button
-            onClick={() => setShowChains(!showChains)}
+            onClick={() => setShowChainInfo(!showChainInfo)}
             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              showChains ? 'bg-primary' : 'bg-input'
+              showChainInfo ? 'bg-primary' : 'bg-input'
             }`}
           >
             <span
               className={`inline-block h-4 w-4 transform rounded-full bg-background transition-transform ${
-                showChains ? 'translate-x-6' : 'translate-x-1'
+                showChainInfo ? 'translate-x-6' : 'translate-x-1'
               }`}
             />
           </button>
@@ -133,7 +143,7 @@ export default function OptionsHistorySection({
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
         <div className="bg-muted/50 rounded-lg p-4">
           <h4 className="text-sm font-medium text-muted-foreground mb-1">Total P&L</h4>
           <p className={`text-2xl font-bold ${totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -155,81 +165,138 @@ export default function OptionsHistorySection({
           <p className="text-2xl font-bold">{enhancedChains}</p>
           <p className="text-sm text-muted-foreground">of {totalClosed} total</p>
         </div>
+        <div className="bg-muted/50 rounded-lg p-4">
+          <h4 className="text-sm font-medium text-muted-foreground mb-1">Rolled Chains</h4>
+          <p className="text-2xl font-bold">{chainsWithRolls}</p>
+          <p className="text-sm text-muted-foreground">with rolls</p>
+        </div>
       </div>
 
-      {/* Closed Positions List */}
+      {/* Closed Chains List */}
       <div className="space-y-2">
-        {(historyExpanded ? closedPositions : closedPositions.slice(0, 5)).map((position, index) => (
-          <div 
-            key={index} 
-            className="flex justify-between items-center p-4 bg-muted/50 rounded-lg"
-          >
-            <div>
-              <div className="flex items-center space-x-2">
-                <span className="font-medium text-lg">{position.underlying_symbol}</span>
+        {(historyExpanded ? closedChains : closedChains.slice(0, 5)).map((chain, index) => {
+          const lastOrder = chain.orders?.[chain.orders.length - 1]
+          const firstOrder = chain.orders?.[0]
+          const isEnhanced = firstOrder?.legs?.length === 1
+          const daysHeld = chain.start_date && chain.last_activity_date ? 
+            Math.floor((new Date(chain.last_activity_date).getTime() - new Date(chain.start_date).getTime()) / (1000 * 60 * 60 * 24)) : 0
+          
+          return (
+            <div 
+              key={chain.chain_id || index} 
+              className="flex justify-between items-center p-4 bg-muted/50 rounded-lg"
+            >
+              <div className="flex-1">
+                <div className="flex items-center space-x-2 mb-2">
+                  <span className="font-medium text-lg">{chain.underlying_symbol}</span>
+                  
+                  {/* Chain Indicators */}
+                  {showChainInfo && chain.chain_id && (
+                    <>
+                      <button
+                        onClick={() => onChainClick?.(chain.chain_id)}
+                        className="text-xs px-2 py-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors cursor-pointer"
+                        title="Click to view chain details"
+                      >
+                        🔗 CHAIN
+                      </button>
+                      {(chain.roll_count || 0) > 0 && (
+                        <span className="text-xs px-2 py-1 rounded bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 border border-orange-300 dark:border-orange-700">
+                          🔄 {chain.roll_count} ROLLS
+                        </span>
+                      )}
+                      {isEnhanced && (
+                        <span className="text-xs px-2 py-1 rounded bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 border border-purple-300 dark:border-purple-700" title="Enhanced chain with complete trading history">
+                          ✨ ENHANCED
+                        </span>
+                      )}
+                    </>
+                  )}
+                  
+                  <span className={`text-xs px-2 py-1 rounded ${
+                    (chain.total_pnl || 0) > 0
+                      ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 border border-green-300 dark:border-green-700' 
+                      : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 border border-red-300 dark:border-red-700'
+                  }`}>
+                    {(chain.total_pnl || 0) > 0 ? 'WIN' : 'LOSS'}
+                  </span>
+                </div>
                 
-                {/* Chain Indicators */}
-                {showChains && position.chain_id && (
-                  <>
-                    <button
-                      onClick={() => onChainClick?.(position.chain_id)}
-                      className="text-xs px-2 py-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors cursor-pointer"
-                      title="Click to view chain details"
-                    >
-                      🔗 CHAIN
-                    </button>
-                    <span className="text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 border border-gray-300 dark:border-gray-700">
-                      📊 {position.roll_count} ROLLS
-                    </span>
-                    {position.enhanced_chain && (
-                      <span className="text-xs px-2 py-1 rounded bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 border border-purple-300 dark:border-purple-700" title="Enhanced chain with complete trading history">
-                        ✨ ENHANCED
-                      </span>
-                    )}
-                  </>
+                <div className="text-sm text-muted-foreground mb-2">
+                  <span className="font-medium">{chain.initial_strategy}</span>
+                  {lastOrder && (
+                    <span> • Final: {lastOrder.strike_price} {lastOrder.option_type?.toUpperCase()}</span>
+                  )}
+                  {daysHeld > 0 && (
+                    <span> • Held: {daysHeld} days</span>
+                  )}
+                  <span> • {new Date(chain.last_activity_date).toLocaleDateString()}</span>
+                </div>
+
+                {/* Enhanced Chain Information */}
+                {showChainInfo && chain.chain_id && (
+                  <div className="mt-2 p-3 bg-muted/30 rounded border border-border">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-muted-foreground">
+                      <div className="flex items-center space-x-2">
+                        <span>📅 Started: {new Date(chain.start_date).toLocaleDateString()}</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <span>📊 {chain.total_orders} orders</span>
+                        {(chain.roll_count || 0) > 0 && (
+                          <span>• {chain.roll_count} rolls</span>
+                        )}
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <span>💰 Net Premium: {formatCurrency(chain.net_premium || 0)}</span>
+                      </div>
+                    </div>
+                    
+                    {/* Chain Performance Summary */}
+                    <div className="mt-2 pt-2 border-t border-border/50">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-4 text-xs">
+                          <span>Credits: {formatCurrency(chain.total_credits_collected || 0)}</span>
+                          <span>Debits: {formatCurrency(chain.total_debits_paid || 0)}</span>
+                        </div>
+                        <div className={`text-sm font-medium ${(chain.total_pnl || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                          Chain P&L: {formatCurrency(chain.total_pnl || 0)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 )}
-                
-                <span className={`text-xs px-2 py-1 rounded ${
-                  position.win_loss === 'win'
-                    ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 border border-green-300 dark:border-green-700' 
-                    : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 border border-red-300 dark:border-red-700'
-                }`}>
-                  {position.win_loss.toUpperCase()}
-                </span>
               </div>
               
-              <div className="text-sm text-muted-foreground mt-1">
-                <span className="font-medium">{position.initial_strategy}</span>
-                {position.final_strike && (
-                  <span> • Final: {position.final_strike} {position.final_option_type?.toUpperCase()}</span>
+              <div className="text-right ml-4">
+                <div className={`font-medium text-lg ${(chain.total_pnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {formatCurrency(chain.total_pnl || 0)}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Net: {formatCurrency(chain.net_premium || 0)}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {chain.total_orders} orders
+                </div>
+                
+                {/* Chain P&L Information */}
+                {showChainInfo && chain.chain_id && chain.total_pnl !== undefined && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Chain: <span className={`${(chain.total_pnl || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                      {formatCurrency(chain.total_pnl || 0)}
+                    </span>
+                  </div>
                 )}
-                {position.days_held && (
-                  <span> • Held: {position.days_held} days</span>
-                )}
-                <span> • {new Date(position.close_date).toLocaleDateString()}</span>
               </div>
             </div>
-            
-            <div className="text-right">
-              <div className={`font-medium text-lg ${position.total_pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {formatCurrency(position.total_pnl)}
-              </div>
-              <div className="text-sm text-muted-foreground">
-                Net: {formatCurrency(position.net_premium)}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {position.total_orders} orders
-              </div>
-            </div>
-          </div>
-        ))}
+          )
+        })}
         
-        {!historyExpanded && closedPositions.length > 5 && (
+        {!historyExpanded && closedChains.length > 5 && (
           <button
             onClick={() => setHistoryExpanded(true)}
             className="w-full text-center text-sm text-primary hover:text-primary/80 pt-2 py-2 rounded hover:bg-muted/30 transition-colors"
           >
-            Show {closedPositions.length - 5} more closed positions
+            Show {closedChains.length - 5} more closed positions
           </button>
         )}
       </div>

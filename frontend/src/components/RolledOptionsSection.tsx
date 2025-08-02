@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { getRolledOptionsChains, OptionsChain, RolledOptionsResponse, OptionsOrder } from '@/lib/api'
 import { ChainSummary } from './ui/ChainSummary'
+import { SymbolLogo } from './ui/SymbolLogo'
 
 interface RolledOptionsSectionProps {
   formatCurrency: (value: number) => string
@@ -298,7 +299,12 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
                           <div className="flex items-center gap-4 mb-2">
-                            <div className="font-medium text-lg">{chain.underlying_symbol}</div>
+                            <SymbolLogo 
+                              symbol={chain.underlying_symbol} 
+                              size="lg" 
+                              showText={true}
+                              className="font-medium text-lg"
+                            />
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(chain.status)}`}>
                               {chain.status.toUpperCase()}
                             </span>

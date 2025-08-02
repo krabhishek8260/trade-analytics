@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { X, ChevronDown, ChevronRight, TrendingUp, TrendingDown, BarChart3, Filter, Download } from 'lucide-react'
+import { SymbolLogo } from '@/components/ui/SymbolLogo'
 import { 
   BreakdownResponse, 
   BreakdownRequest, 
@@ -356,8 +357,17 @@ export function BreakdownModal({
                                 <div key={index} className="flex justify-between items-center p-3 bg-muted/20 rounded-md text-sm">
                                   <div>
                                     <div className="font-medium">
-                                      {position.underlying_symbol} {position.option_type?.toUpperCase()} 
-                                      ${position.strike_price} {position.expiration_date}
+                                      <div className="flex items-center gap-2">
+                                        <SymbolLogo 
+                                          symbol={position.underlying_symbol} 
+                                          size="sm" 
+                                          showText={false}
+                                        />
+                                        <span>
+                                          {position.underlying_symbol} {position.option_type?.toUpperCase()} 
+                                          ${position.strike_price} {position.expiration_date}
+                                        </span>
+                                      </div>
                                     </div>
                                     <div className="text-muted-foreground">
                                       {position.contracts} contracts • {position.strategy}

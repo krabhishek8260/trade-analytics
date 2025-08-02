@@ -513,7 +513,7 @@ export async function getClosedOptionsHistory(params?: {
   if (params?.sort_order) queryParams.append('sort_order', params.sort_order)
   if (params?.include_chains !== undefined) queryParams.append('include_chains', params.include_chains.toString())
   
-  const url = `/api/v1/options/history${queryParams.toString() ? '?' + queryParams.toString() : ''}`
+  const url = `/options/history${queryParams.toString() ? '?' + queryParams.toString() : ''}`
   const response = await apiRequest<ListResponse<ClosedOptionsPosition>>(url)
   return response.data || []
 }

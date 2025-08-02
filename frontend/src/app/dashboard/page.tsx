@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { getDashboardData, checkAuthStatus, PortfolioSummary, StocksSummary, OptionsSummary, PortfolioGreeks, getPortfolioGreeks, ApiError, getRolledOptionsChains, OptionsChain } from '@/lib/api'
+import { getDashboardData, checkAuthStatus, PortfolioSummary, StocksSummary, OptionsSummary, PortfolioGreeks, getPortfolioGreeks, ApiError, getRolledOptionsChains, getRolledOptionsChainDetails, OptionsChain } from '@/lib/api'
 import { AnalysisTab } from '@/components/analysis'
 import { InteractiveMetricCard } from '@/components/breakdown'
 import { RolledOptionsSection } from '@/components/RolledOptionsSection'
 import OptionsHistorySection from '@/components/OptionsHistorySection'
+import { SymbolLogo } from '@/components/ui/SymbolLogo'
 
 interface DashboardData {
   portfolio: PortfolioSummary | null
@@ -176,7 +177,14 @@ function StocksTab({ stocks, formatCurrency, formatPercent }: {
           {stocks.positions.map((position, index) => (
             <div key={index} className="flex justify-between items-center p-4 bg-muted/50 rounded-lg">
               <div>
-                <span className="font-medium text-lg">{position.symbol}</span>
+                <div className="flex items-center space-x-2 mb-1">
+                  <SymbolLogo 
+                    symbol={position.symbol} 
+                    size="md" 
+                    showText={false}
+                  />
+                  <span className="font-medium text-lg">{position.symbol}</span>
+                </div>
                 <div className="text-sm text-muted-foreground">
                   {position.quantity} shares @ {formatCurrency(position.average_buy_price)}
                 </div>
@@ -391,7 +399,12 @@ function OptionsTab({ options, greeks, formatCurrency, formatPercent, onToggleCh
               {topSymbols.slice(0, 10).map((symbol, index) => (
                 <div key={index} className="flex justify-between items-center p-4 bg-muted/50 rounded-lg">
                   <div>
-                    <span className="font-medium text-lg">{symbol.symbol}</span>
+                    <SymbolLogo 
+                      symbol={symbol.symbol} 
+                      size="lg" 
+                      showText={true}
+                      className="font-medium text-lg"
+                    />
                     <div className="text-sm text-muted-foreground">
                       {symbol.total_trades} trades • {formatPercent(symbol.win_rate)} win rate
                     </div>
@@ -535,6 +548,11 @@ function OptionsTab({ options, greeks, formatCurrency, formatPercent, onToggleCh
             >
               <div>
                 <div className="flex items-center space-x-2">
+                  <SymbolLogo 
+                    symbol={position.underlying_symbol} 
+                    size="md" 
+                    showText={false}
+                  />
                   <span className="font-medium text-lg">{position.underlying_symbol}</span>
                   
                   {/* Chain Indicators */}
@@ -755,16 +773,8 @@ export default function Dashboard() {
     
     try {
       // Fetch the specific chain details
-      const response = await getRolledOptionsChains({ 
-        chain_id: chainId,
-        days_back: 365 // Get full history
-      })
-      
-      // Find the specific chain in the response
-      const chain = response.chains.find(c => c.chain_id === chainId)
-      if (chain) {
-        setChainDetails(chain)
-      }
+      const chain = await getRolledOptionsChainDetails(chainId)
+      setChainDetails(chain)
     } catch (error) {
       console.error('Failed to fetch chain details:', error)
       setError('Failed to load chain details')
@@ -1074,7 +1084,14 @@ export default function Dashboard() {
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
                       <div>
                         <span className="text-muted-foreground">Symbol:</span>
-                        <span className="font-medium ml-1">{chainDetails.underlying_symbol}</span>
+                        <div className="flex items-center space-x-2 mt-1">
+                          <SymbolLogo 
+                            symbol={chainDetails.underlying_symbol} 
+                            size="sm" 
+                            showText={false}
+                          />
+                          <span className="font-medium">{chainDetails.underlying_symbol}</span>
+                        </div>
                       </div>
                       <div>
                         <span className="text-muted-foreground">Status:</span>
@@ -1177,7 +1194,7 @@ export default function Dashboard() {
                                         {order.roll_details.close_position.side} to close
                                       </div>
                                       <div className="text-xs text-muted-foreground">
-                                        {order.quantity || order.contracts || 0} contracts
+                                        {order.quantity || 0} contracts
                                       </div>
                                     </div>
                                     <div>
@@ -1217,7 +1234,7 @@ export default function Dashboard() {
                                         {order.roll_details.open_position.side} to open
                                       </div>
                                       <div className="text-xs text-muted-foreground">
-                                        {order.quantity || order.contracts || 0} contracts
+                                        {order.quantity || 0} contracts
                                       </div>
                                     </div>
                                     <div>
@@ -1280,10 +1297,10 @@ export default function Dashboard() {
                                   <div>
                                     <div className="text-muted-foreground text-xs mb-1">TRANSACTION</div>
                                     <div>
-                                      {order.side} to {order.position_effect}
+                                      {order.transaction_side} to {order.position_effect}
                                     </div>
                                     <div className="text-xs text-muted-foreground">
-                                      {order.quantity || order.contracts || 0} contracts
+                                      {order.quantity || 0} contracts
                                     </div>
                                   </div>
                                   <div>
