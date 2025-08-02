@@ -673,6 +673,11 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   
+  // Auto-refresh state
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true)
+  const [refreshInterval, setRefreshInterval] = useState(30000) // 30 seconds default
+  const [showRefreshNotification, setShowRefreshNotification] = useState(false)
+  
   // Chain modal state
   const [selectedChainId, setSelectedChainId] = useState<string | null>(null)
   const [chainDetails, setChainDetails] = useState<OptionsChain | null>(null)
@@ -707,6 +712,21 @@ export default function Dashboard() {
 
     checkAuth()
   }, [])
+
+  // Auto-refresh effect
+  useEffect(() => {
+    if (!isAuthenticated || !autoRefreshEnabled || dataLoading) return
+
+    const interval = setInterval(() => {
+      console.log('Auto-refreshing dashboard data...')
+      fetchDashboardData()
+      // Show brief notification
+      setShowRefreshNotification(true)
+      setTimeout(() => setShowRefreshNotification(false), 2000)
+    }, refreshInterval)
+
+    return () => clearInterval(interval)
+  }, [isAuthenticated, autoRefreshEnabled, refreshInterval, dataLoading])
 
   // Refetch data when chain toggle changes
   useEffect(() => {
@@ -826,12 +846,43 @@ export default function Dashboard() {
                   <div className="flex items-center text-sm text-success">
                     <span className="w-2 h-2 bg-success rounded-full mr-2"></span>
                     Connected to Robinhood
+                    {autoRefreshEnabled && (
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        (Auto-refresh: {refreshInterval / 1000}s)
+                      </span>
+                    )}
                   </div>
                   {lastUpdated && (
-                    <div className="text-xs text-muted-foreground">
-                      Updated: {lastUpdated.toLocaleTimeString()}
+                    <div className="text-xs text-muted-foreground flex items-center">
+                      <span>Updated: {lastUpdated.toLocaleTimeString()}</span>
+                      {autoRefreshEnabled && (
+                        <span className="ml-2 w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
+                      )}
                     </div>
                   )}
+                  <div className="flex items-center space-x-2">
+                    <label className="flex items-center text-xs text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={autoRefreshEnabled}
+                        onChange={(e) => setAutoRefreshEnabled(e.target.checked)}
+                        className="mr-1"
+                      />
+                      Auto-refresh
+                    </label>
+                    <select
+                      value={refreshInterval / 1000}
+                      onChange={(e) => setRefreshInterval(Number(e.target.value) * 1000)}
+                      className="text-xs bg-secondary text-secondary-foreground rounded px-2 py-1"
+                      disabled={!autoRefreshEnabled}
+                    >
+                      <option value={15}>15s</option>
+                      <option value={30}>30s</option>
+                      <option value={60}>1m</option>
+                      <option value={120}>2m</option>
+                      <option value={300}>5m</option>
+                    </select>
+                  </div>
                   <button
                     onClick={handleRefresh}
                     disabled={dataLoading}
@@ -866,6 +917,15 @@ export default function Dashboard() {
               >
                 Try again
               </button>
+            </div>
+          )}
+
+          {showRefreshNotification && (
+            <div className="bg-blue-500/10 border border-blue-500/20 rounded-md p-3 mb-6 animate-in slide-in-from-top-2">
+              <p className="text-blue-600 text-sm flex items-center">
+                <span className="w-2 h-2 bg-blue-500 rounded-full mr-2 animate-pulse"></span>
+                Data refreshed automatically
+              </p>
             </div>
           )}
           

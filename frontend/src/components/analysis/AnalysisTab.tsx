@@ -37,6 +37,10 @@ export default function AnalysisTab({ formatCurrency, formatPercent }: AnalysisT
   const [isFiltering, setIsFiltering] = useState(false)
   const [dataErrors, setDataErrors] = useState<{[key: string]: string}>({})
   
+  // Auto-refresh state
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true)
+  const [refreshInterval, setRefreshInterval] = useState(60000) // 1 minute default for analysis
+  
   // Filters
   const [filters, setFilters] = useState<AnalysisFilters>({
     ticker: '',
@@ -138,6 +142,18 @@ export default function AnalysisTab({ formatCurrency, formatPercent }: AnalysisT
     }
   }
 
+  // Auto-refresh effect
+  useEffect(() => {
+    if (!autoRefreshEnabled || isInitialLoading || isFiltering) return
+
+    const interval = setInterval(() => {
+      console.log('Auto-refreshing analysis data...')
+      loadAnalysisData(true)
+    }, refreshInterval)
+
+    return () => clearInterval(interval)
+  }, [autoRefreshEnabled, refreshInterval, isInitialLoading, isFiltering])
+
   // Initial data load
   useEffect(() => {
     loadAnalysisData(false)
@@ -167,7 +183,49 @@ export default function AnalysisTab({ formatCurrency, formatPercent }: AnalysisT
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-semibold mb-4">Trading Analysis & History</h2>
+        <div className="flex justify-between items-center mb-4">
+          <div className="flex items-center space-x-2">
+            <h2 className="text-xl font-semibold">Trading Analysis & History</h2>
+            {autoRefreshEnabled && (
+              <span className="text-xs text-muted-foreground flex items-center">
+                <span className="w-2 h-2 bg-blue-500 rounded-full mr-1 animate-pulse"></span>
+                Auto-refresh: {refreshInterval / 1000}s
+              </span>
+            )}
+          </div>
+          
+          <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2">
+              <label className="flex items-center text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={autoRefreshEnabled}
+                  onChange={(e) => setAutoRefreshEnabled(e.target.checked)}
+                  className="mr-1"
+                />
+                Auto-refresh
+              </label>
+              <select
+                value={refreshInterval / 1000}
+                onChange={(e) => setRefreshInterval(Number(e.target.value) * 1000)}
+                className="text-xs bg-secondary text-secondary-foreground rounded px-2 py-1"
+                disabled={!autoRefreshEnabled}
+              >
+                <option value={30}>30s</option>
+                <option value={60}>1m</option>
+                <option value={120}>2m</option>
+                <option value={300}>5m</option>
+              </select>
+            </div>
+            <button
+              onClick={() => loadAnalysisData(true)}
+              disabled={isFiltering}
+              className="px-3 py-1 text-sm bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 disabled:opacity-50"
+            >
+              {isFiltering ? 'Refreshing...' : 'Refresh'}
+            </button>
+          </div>
+        </div>
         
         <AnalysisFilters
           filters={filters}

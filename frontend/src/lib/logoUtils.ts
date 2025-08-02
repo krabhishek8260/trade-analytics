@@ -47,7 +47,7 @@ const getCachedLogos = (): LogoCache => {
       const validEntries = Object.entries(parsed).filter(
         ([_, data]: [string, any]) => now - data.timestamp < CACHE_DURATION
       );
-      return Object.fromEntries(validEntries);
+      return Object.fromEntries(validEntries) as LogoCache;
     }
   } catch (error) {
     console.warn('Failed to load logo cache:', error);
