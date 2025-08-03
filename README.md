@@ -12,6 +12,21 @@ Modern trading analytics application built with FastAPI, Next.js, and Supabase.
 - **Caching**: Redis for performance
 - **Deployment**: Docker containers
 
+## Documentation
+
+### Core Features
+
+- [**New Data Detection System**](docs/NEW_DATA_DETECTION.md) - Smart background data checking without page refreshes
+- [**Options Calculation Guide**](docs/OPTIONS_CALCULATION_GUIDE.md) - Detailed options P&L calculations
+- [**P&L Analytics Plan**](docs/OPTIONS_PNL_ANALYTICS_PLAN.md) - Comprehensive P&L analysis features
+- [**Database Migrations**](backend/docs/DATABASE_MIGRATIONS.md) - Database schema and migration process
+
+### Development Guides
+
+- [**Enhanced Chains Documentation**](backend/ENHANCED_CHAINS_DOCUMENTATION.md) - Options chain analysis
+- [**Roll Detection Logic**](backend/ROLL_DETECTION_LOGIC.md) - Rolled options detection
+- [**Migration Quick Reference**](backend/docs/MIGRATION_QUICK_REFERENCE.md) - Quick migration commands
+
 ## Features
 
 - 📊 Real-time portfolio tracking

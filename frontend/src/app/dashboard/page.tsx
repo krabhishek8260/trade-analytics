@@ -689,8 +689,14 @@ export default function Dashboard() {
   const [chainDetails, setChainDetails] = useState<OptionsChain | null>(null)
   const [chainLoading, setChainLoading] = useState(false)
   
-  // Auto-refresh state
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true)
+  // New data detection state
+  const [hasNewData, setHasNewData] = useState(false)
+  const [newDataCheckEnabled, setNewDataCheckEnabled] = useState(true)
+  const [checkInterval, setCheckInterval] = useState(30000) // 30 seconds default
+  const [lastDataHash, setLastDataHash] = useState<string>('')
+
+  // Auto-refresh state (keeping for backward compatibility but will be disabled by default)
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false)
   const [refreshInterval, setRefreshInterval] = useState(30000) // 30 seconds default
   const [showRefreshNotification, setShowRefreshNotification] = useState(false)
 
@@ -737,6 +743,18 @@ export default function Dashboard() {
 
     return () => clearInterval(interval)
   }, [isAuthenticated, autoRefreshEnabled, refreshInterval, dataLoading])
+
+  // New data check effect
+  useEffect(() => {
+    if (!isAuthenticated || !newDataCheckEnabled || dataLoading) return
+
+    const interval = setInterval(() => {
+      console.log('Checking for new data...')
+      checkForNewData()
+    }, checkInterval)
+
+    return () => clearInterval(interval)
+  }, [isAuthenticated, newDataCheckEnabled, checkInterval, dataLoading, lastDataHash])
 
   // Refetch data when chain toggle changes
   useEffect(() => {
@@ -787,24 +805,29 @@ export default function Dashboard() {
               console.log('Refresh successful, updating data...')
               setDashboardData({ ...retryData, greeks })
               setLastUpdated(new Date())
+              setLastDataHash(generateDataHash({ ...retryData, greeks }))
             } else {
               setDashboardData({ ...data, greeks })
               setLastUpdated(new Date())
+              setLastDataHash(generateDataHash({ ...data, greeks }))
             }
           } else {
             setDashboardData({ ...data, greeks })
             setLastUpdated(new Date())
+            setLastDataHash(generateDataHash({ ...data, greeks }))
           }
         } catch (refreshError) {
           console.error('Refresh failed:', refreshError)
           setDashboardData({ ...data, greeks })
           setLastUpdated(new Date())
+          setLastDataHash(generateDataHash({ ...data, greeks }))
         } finally {
           setRefreshing(false)
         }
       } else {
         setDashboardData({ ...data, greeks })
         setLastUpdated(new Date())
+        setLastDataHash(generateDataHash({ ...data, greeks }))
       }
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error)
@@ -834,6 +857,7 @@ export default function Dashboard() {
   }
 
   const handleRefresh = () => {
+    setHasNewData(false) // Clear new data indicator when manually refreshing
     fetchDashboardData()
   }
 
@@ -872,11 +896,45 @@ export default function Dashboard() {
   }
 
   const formatPercent = (value: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'percent',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(value / 100)
+    return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
+  }
+
+  // Generate a hash of the current data to detect changes
+  const generateDataHash = (data: DashboardData): string => {
+    const dataString = JSON.stringify({
+      portfolio: data.portfolio?.total_value,
+      stocks: data.stocks?.total_positions,
+      options: data.options?.total_positions,
+      // Use a combination of values that would change when new data arrives
+      portfolioReturn: data.portfolio?.total_return,
+      stocksReturn: data.stocks?.total_return,
+      optionsReturn: data.options?.total_return
+    })
+    return btoa(dataString).slice(0, 16) // Simple hash for comparison
+  }
+
+  // Check for new data without updating the UI
+  const checkForNewData = async () => {
+    if (!isAuthenticated || !newDataCheckEnabled || dataLoading) return
+
+    try {
+      const [data, greeks] = await Promise.all([
+        getDashboardData(showChains),
+        getPortfolioGreeks().catch(err => {
+          console.warn('Failed to fetch portfolio Greeks:', err)
+          return null
+        })
+      ])
+      
+      const newDataHash = generateDataHash({ ...data, greeks })
+      
+      if (lastDataHash && newDataHash !== lastDataHash) {
+        console.log('New data detected!')
+        setHasNewData(true)
+      }
+    } catch (error) {
+      console.error('Failed to check for new data:', error)
+    }
   }
 
   if (isLoading) {
@@ -938,12 +996,38 @@ export default function Dashboard() {
                       <option value={300}>5m</option>
                     </select>
                   </div>
+                  <div className="flex items-center space-x-2">
+                    <label className="flex items-center text-xs text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={newDataCheckEnabled}
+                        onChange={(e) => setNewDataCheckEnabled(e.target.checked)}
+                        className="mr-1"
+                      />
+                      Check for new data
+                    </label>
+                    <select
+                      value={checkInterval / 1000}
+                      onChange={(e) => setCheckInterval(Number(e.target.value) * 1000)}
+                      className="text-xs bg-secondary text-secondary-foreground rounded px-2 py-1"
+                      disabled={!newDataCheckEnabled}
+                    >
+                      <option value={15}>15s</option>
+                      <option value={30}>30s</option>
+                      <option value={60}>1m</option>
+                      <option value={120}>2m</option>
+                      <option value={300}>5m</option>
+                    </select>
+                  </div>
                   <button
                     onClick={handleRefresh}
                     disabled={dataLoading}
-                    className="px-3 py-1 text-sm bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 disabled:opacity-50"
+                    className="px-3 py-1 text-sm bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 disabled:opacity-50 relative"
                   >
                     {dataLoading ? 'Refreshing...' : 'Refresh'}
+                    {hasNewData && (
+                      <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-pulse"></span>
+                    )}
                   </button>
                   <button
                     onClick={handleDisconnect}
@@ -980,6 +1064,23 @@ export default function Dashboard() {
               <p className="text-blue-600 text-sm flex items-center">
                 <span className="w-2 h-2 bg-blue-500 rounded-full mr-2 animate-pulse"></span>
                 Data refreshed automatically
+              </p>
+            </div>
+          )}
+
+          {hasNewData && (
+            <div className="bg-green-500/10 border border-green-500/20 rounded-md p-3 mb-6 animate-in slide-in-from-top-2">
+              <p className="text-green-600 text-sm flex items-center justify-between">
+                <span className="flex items-center">
+                  <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
+                  New data available
+                </span>
+                <button
+                  onClick={handleRefresh}
+                  className="text-xs bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600 transition-colors"
+                >
+                  Refresh Now
+                </button>
               </p>
             </div>
           )}

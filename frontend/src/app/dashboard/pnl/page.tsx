@@ -88,9 +88,27 @@ export default function PnLAnalyticsPage() {
   const [symbolSortBy, setSymbolSortBy] = useState('total_pnl');
   const [symbolSortOrder, setSymbolSortOrder] = useState<'asc' | 'desc'>('desc');
 
+  // New data detection state
+  const [hasNewData, setHasNewData] = useState(false);
+  const [newDataCheckEnabled, setNewDataCheckEnabled] = useState(true);
+  const [checkInterval, setCheckInterval] = useState(30000) // 30 seconds default
+  const [lastDataHash, setLastDataHash] = useState<string>('')
+
   useEffect(() => {
     loadPnLData();
   }, []);
+
+  // New data check effect
+  useEffect(() => {
+    if (!newDataCheckEnabled || loading) return
+
+    const interval = setInterval(() => {
+      console.log('Checking for new P&L data...')
+      checkForNewPnLData()
+    }, checkInterval)
+
+    return () => clearInterval(interval)
+  }, [newDataCheckEnabled, checkInterval, loading, lastDataHash, selectedYear, symbolSortBy, symbolSortOrder])
 
   const loadPnLData = async () => {
     try {
@@ -108,6 +126,10 @@ export default function PnLAnalyticsPage() {
       setYearlyData(yearlyResult);
       setSymbolData(symbolResult);
       
+      // Update data hash for change detection
+      const dataHash = generatePnLDataHash(summaryResult, yearlyResult, symbolResult);
+      setLastDataHash(dataHash);
+      
     } catch (err) {
       console.error('Error loading P&L data:', err);
       setError('Failed to load P&L data. Please try again.');
@@ -115,6 +137,49 @@ export default function PnLAnalyticsPage() {
       setLoading(false);
     }
   };
+
+  // Generate a hash of the current P&L data to detect changes
+  const generatePnLDataHash = (summary: PnLSummary | null, yearly: YearlyPnL[], symbols: SymbolPnL[]): string => {
+    const dataString = JSON.stringify({
+      summaryTotal: summary?.total_pnl || 0,
+      summaryCount: summary?.total_trades || 0,
+      yearlyCount: yearly.length,
+      symbolsCount: symbols.length,
+      // Use some key metrics that would change when new data arrives
+      totalYearlyPnL: yearly.reduce((sum, year) => sum + (year.total_pnl || 0), 0),
+      totalSymbolsPnL: symbols.reduce((sum, symbol) => sum + (symbol.total_pnl || 0), 0)
+    })
+    return btoa(dataString).slice(0, 16) // Simple hash for comparison
+  }
+
+  // Check for new data without updating the UI
+  const checkForNewPnLData = async () => {
+    if (!newDataCheckEnabled || loading) return
+
+    try {
+      // Load minimal data for comparison
+      const [summaryResult, yearlyResult, symbolResult] = await Promise.all([
+        getPnLSummary(),
+        getYearlyPnL(),
+        getSymbolPnL(selectedYear, 20, symbolSortBy, symbolSortOrder)
+      ]);
+      
+      const newDataHash = generatePnLDataHash(summaryResult, yearlyResult, symbolResult)
+      
+      if (lastDataHash && newDataHash !== lastDataHash) {
+        console.log('New P&L data detected!')
+        setHasNewData(true)
+      }
+    } catch (error) {
+      console.error('Failed to check for new P&L data:', error)
+    }
+  }
+
+  // Manual refresh function
+  const handleManualRefresh = () => {
+    setHasNewData(false) // Clear new data indicator when manually refreshing
+    loadPnLData()
+  }
 
   const handleYearClick = async (year: number) => {
     setSelectedYear(year);
@@ -188,20 +253,75 @@ export default function PnLAnalyticsPage() {
           </p>
         </div>
         
-        {selectedYear && (
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">
-              Viewing data for {selectedYear}
+        <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2">
+            <label className="flex items-center text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={newDataCheckEnabled}
+                onChange={(e) => setNewDataCheckEnabled(e.target.checked)}
+                className="mr-1"
+              />
+              Check for new data
+            </label>
+            <select
+              value={checkInterval / 1000}
+              onChange={(e) => setCheckInterval(Number(e.target.value) * 1000)}
+              className="text-xs bg-secondary text-secondary-foreground rounded px-2 py-1"
+              disabled={!newDataCheckEnabled}
+            >
+              <option value={15}>15s</option>
+              <option value={30}>30s</option>
+              <option value={60}>1m</option>
+              <option value={120}>2m</option>
+              <option value={300}>5m</option>
+            </select>
+          </div>
+          <button
+            onClick={handleManualRefresh}
+            disabled={loading}
+            className="px-3 py-1 text-sm bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 disabled:opacity-50 relative"
+          >
+            {loading ? 'Refreshing...' : 'Refresh'}
+            {hasNewData && (
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-pulse"></span>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Year Filter Display */}
+      {selectedYear && (
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">
+            Viewing data for {selectedYear}
+          </span>
+          <button
+            onClick={clearYearFilter}
+            className="px-3 py-1 text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+          >
+            Clear Filter
+          </button>
+        </div>
+      )}
+
+      {/* New Data Notification */}
+      {hasNewData && (
+        <div className="bg-green-500/10 border border-green-500/20 rounded-md p-3 animate-in slide-in-from-top-2">
+          <p className="text-green-600 text-sm flex items-center justify-between">
+            <span className="flex items-center">
+              <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
+              New P&L data available
             </span>
             <button
-              onClick={clearYearFilter}
-              className="px-3 py-1 text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+              onClick={handleManualRefresh}
+              className="text-xs bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600 transition-colors"
             >
-              Clear Filter
+              Refresh Now
             </button>
-          </div>
-        )}
-      </div>
+          </p>
+        </div>
+      )}
 
       {/* Summary Cards */}
       {pnlSummary && (

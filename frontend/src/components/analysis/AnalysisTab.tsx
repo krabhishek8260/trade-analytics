@@ -26,34 +26,40 @@ export default function AnalysisTab({ formatCurrency, formatPercent }: AnalysisT
   const [historyExpanded, setHistoryExpanded] = useState(false)
   const [positionsExpanded, setPositionsExpanded] = useState(false)
   
-  // Data State
+  // Data state
   const [orders, setOrders] = useState<HistoricalOptionsOrder[]>([])
   const [tickerPerformance, setTickerPerformance] = useState<TickerPerformance[]>([])
-  const [filteredPositions, setFilteredPositions] = useState<OptionPosition[]>([])
   const [allPositions, setAllPositions] = useState<OptionPosition[]>([])
-  
-  // Loading States
+  const [filteredPositions, setFilteredPositions] = useState<OptionPosition[]>([])
+  const [dataErrors, setDataErrors] = useState<{[key: string]: string}>({})
+
+  // Loading states
   const [isInitialLoading, setIsInitialLoading] = useState(true)
   const [isFiltering, setIsFiltering] = useState(false)
-  const [dataErrors, setDataErrors] = useState<{[key: string]: string}>({})
-  
-  // Auto-refresh state
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true)
-  const [refreshInterval, setRefreshInterval] = useState(60000) // 1 minute default for analysis
-  
-  // Filters
+
+  // Filter state
   const [filters, setFilters] = useState<AnalysisFilters>({
     ticker: '',
     strategy: '',
     positionType: '',
-    daysBack: 30,
-    orderState: 'filled'
+    daysBack: 90,
+    orderState: ''
   })
 
+  // New data detection state
+  const [hasNewData, setHasNewData] = useState(false)
+  const [newDataCheckEnabled, setNewDataCheckEnabled] = useState(true)
+  const [checkInterval, setCheckInterval] = useState(30000) // 30 seconds default
+  const [lastDataHash, setLastDataHash] = useState<string>('')
+
+  // Auto-refresh state (keeping for backward compatibility but disabled by default)
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false)
+  const [refreshInterval, setRefreshInterval] = useState(30000) // 30 seconds default
+  
   // Centralized data loading with proper error handling
   const loadAnalysisData = async (withFilters = false) => {
     const errors: {[key: string]: string} = {}
-    
+
     try {
       if (withFilters) {
         setIsFiltering(true)
@@ -125,6 +131,10 @@ export default function AnalysisTab({ formatCurrency, formatPercent }: AnalysisT
       setFilteredPositions(filteredData)
       setDataErrors(errors)
       
+      // Update data hash for change detection
+      const dataHash = generateAnalysisDataHash(ordersData, performanceData, currentPositions, filteredData)
+      setLastDataHash(dataHash)
+      
       console.log('Analysis data loaded:', {
         orders: ordersData.length,
         performance: performanceData.length,
@@ -142,6 +152,43 @@ export default function AnalysisTab({ formatCurrency, formatPercent }: AnalysisT
     }
   }
 
+  // Generate a hash of the current analysis data to detect changes
+  const generateAnalysisDataHash = (orders: HistoricalOptionsOrder[], performance: TickerPerformance[], positions: OptionPosition[], filtered: OptionPosition[]): string => {
+    const dataString = JSON.stringify({
+      ordersCount: orders.length,
+      performanceCount: performance.length,
+      positionsCount: positions.length,
+      filteredCount: filtered.length,
+      // Use some key metrics that would change when new data arrives
+      totalOrdersValue: orders.reduce((sum, order) => sum + (order.premium || 0), 0),
+      totalPositionsValue: positions.reduce((sum, pos) => sum + (pos.market_value || 0), 0)
+    })
+    return btoa(dataString).slice(0, 16) // Simple hash for comparison
+  }
+
+  // Check for new data without updating the UI
+  const checkForNewAnalysisData = async () => {
+    if (!newDataCheckEnabled || isInitialLoading || isFiltering) return
+
+    try {
+      // Load minimal data for comparison
+      const [ordersData, performanceData, currentPositions] = await Promise.all([
+        getOptionsOrders({ limit: 100, days_back: filters.daysBack }),
+        getTickerPerformance(),
+        getOptionsPositions()
+      ])
+      
+      const newDataHash = generateAnalysisDataHash(ordersData, performanceData, currentPositions, [])
+      
+      if (lastDataHash && newDataHash !== lastDataHash) {
+        console.log('New analysis data detected!')
+        setHasNewData(true)
+      }
+    } catch (error) {
+      console.error('Failed to check for new analysis data:', error)
+    }
+  }
+
   // Auto-refresh effect
   useEffect(() => {
     if (!autoRefreshEnabled || isInitialLoading || isFiltering) return
@@ -153,6 +200,24 @@ export default function AnalysisTab({ formatCurrency, formatPercent }: AnalysisT
 
     return () => clearInterval(interval)
   }, [autoRefreshEnabled, refreshInterval, isInitialLoading, isFiltering])
+
+  // New data check effect
+  useEffect(() => {
+    if (!newDataCheckEnabled || isInitialLoading || isFiltering) return
+
+    const interval = setInterval(() => {
+      console.log('Checking for new analysis data...')
+      checkForNewAnalysisData()
+    }, checkInterval)
+
+    return () => clearInterval(interval)
+  }, [newDataCheckEnabled, checkInterval, isInitialLoading, isFiltering, lastDataHash, filters.daysBack])
+
+  // Manual refresh function
+  const handleManualRefresh = () => {
+    setHasNewData(false) // Clear new data indicator when manually refreshing
+    loadAnalysisData(true)
+  }
 
   // Initial data load
   useEffect(() => {
@@ -192,9 +257,38 @@ export default function AnalysisTab({ formatCurrency, formatPercent }: AnalysisT
                 Auto-refresh: {refreshInterval / 1000}s
               </span>
             )}
+            {newDataCheckEnabled && (
+              <span className="text-xs text-muted-foreground flex items-center">
+                <span className="w-2 h-2 bg-green-500 rounded-full mr-1 animate-pulse"></span>
+                Checking: {checkInterval / 1000}s
+              </span>
+            )}
           </div>
           
           <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2">
+              <label className="flex items-center text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={newDataCheckEnabled}
+                  onChange={(e) => setNewDataCheckEnabled(e.target.checked)}
+                  className="mr-1"
+                />
+                Check for new data
+              </label>
+              <select
+                value={checkInterval / 1000}
+                onChange={(e) => setCheckInterval(Number(e.target.value) * 1000)}
+                className="text-xs bg-secondary text-secondary-foreground rounded px-2 py-1"
+                disabled={!newDataCheckEnabled}
+              >
+                <option value={15}>15s</option>
+                <option value={30}>30s</option>
+                <option value={60}>1m</option>
+                <option value={120}>2m</option>
+                <option value={300}>5m</option>
+              </select>
+            </div>
             <div className="flex items-center space-x-2">
               <label className="flex items-center text-xs text-muted-foreground">
                 <input
@@ -218,14 +312,35 @@ export default function AnalysisTab({ formatCurrency, formatPercent }: AnalysisT
               </select>
             </div>
             <button
-              onClick={() => loadAnalysisData(true)}
+              onClick={handleManualRefresh}
               disabled={isFiltering}
-              className="px-3 py-1 text-sm bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 disabled:opacity-50"
+              className="px-3 py-1 text-sm bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 disabled:opacity-50 relative"
             >
               {isFiltering ? 'Refreshing...' : 'Refresh'}
+              {hasNewData && (
+                <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-pulse"></span>
+              )}
             </button>
           </div>
         </div>
+
+        {/* New Data Notification */}
+        {hasNewData && (
+          <div className="bg-green-500/10 border border-green-500/20 rounded-md p-3 mb-6 animate-in slide-in-from-top-2">
+            <p className="text-green-600 text-sm flex items-center justify-between">
+              <span className="flex items-center">
+                <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
+                New analysis data available
+              </span>
+              <button
+                onClick={handleManualRefresh}
+                className="text-xs bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600 transition-colors"
+              >
+                Refresh Now
+              </button>
+            </p>
+          </div>
+        )}
         
         <AnalysisFilters
           filters={filters}

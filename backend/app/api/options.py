@@ -970,113 +970,181 @@ async def get_closed_options_history(
     sort_order: str = Query("desc", regex="^(asc|desc)$", description="Sort order"),
     include_chains: bool = Query(True, description="Include chain information for closed positions"),
     current_user_id: UUID = Depends(get_current_user_id),
-    db = Depends(get_db)
+    db = Depends(get_db),
+    rh_service: RobinhoodService = Depends(get_robinhood_service)
 ):
-    """Get closed options positions with chain information from pre-computed database"""
+    """Get closed options positions by comparing filled orders with current open positions"""
     try:
-        # Import the RolledOptionsChain model
-        from app.models.rolled_options_chain import RolledOptionsChain
-        from sqlalchemy import select, desc, and_
+        # Ensure demo user exists for development/testing
+        await ensure_demo_user_exists(db)
         
-        # Build query for closed chains only
-        query = select(RolledOptionsChain).where(
-            and_(
-                RolledOptionsChain.user_id == str(current_user_id),
-                RolledOptionsChain.status == "closed"
+        # Get all filled orders
+        since_time = None
+        if days_back is not None:
+            since_time = datetime.now() - timedelta(days=days_back)
+        
+        orders_result = await rh_service.get_options_orders(limit=1000, since_time=since_time)
+        if not orders_result.get("success", False):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=orders_result.get("message", "Failed to fetch options orders")
             )
-        )
         
-        # Apply filters
-        if underlying_symbol:
-            query = query.where(RolledOptionsChain.underlying_symbol == underlying_symbol.upper())
+        all_orders = orders_result["data"]
+        filled_orders = [order for order in all_orders if order.get("state") == "filled"]
         
-        # Apply sorting
-        sort_field = {
-            "close_date": RolledOptionsChain.last_activity_date,
-            "start_date": RolledOptionsChain.start_date,
-            "total_pnl": RolledOptionsChain.total_pnl,
-            "net_premium": RolledOptionsChain.net_premium,
-            "roll_count": RolledOptionsChain.roll_count
-        }.get(sort_by, RolledOptionsChain.last_activity_date)
+        # Get current open positions
+        positions_result = await rh_service.get_options_positions()
+        if not positions_result.get("success", False):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=positions_result.get("message", "Failed to fetch current positions")
+            )
         
-        if sort_order == "desc":
-            query = query.order_by(desc(sort_field))
-        else:
-            query = query.order_by(sort_field)
+        current_positions = positions_result["data"]
         
-        # Apply limit
-        query = query.limit(limit)
+        # Create a set of currently open position keys (symbol + strike + expiry + type)
+        open_position_keys = set()
+        for pos in current_positions:
+            key = f"{pos.get('underlying_symbol')}_{pos.get('strike_price')}_{pos.get('expiration_date')}_{pos.get('option_type', '').lower()}"
+            open_position_keys.add(key)
         
-        # Execute query
-        result = await db.execute(query)
-        closed_chains = result.scalars().all()
+        # Group orders by position key to identify opening/closing pairs
+        position_orders = {}
+        for order in filled_orders:
+            key = f"{order.get('underlying_symbol')}_{order.get('strike_price')}_{order.get('expiration_date')}_{order.get('option_type', '').lower()}"
+            
+            if key not in position_orders:
+                position_orders[key] = []
+            position_orders[key].append(order)
         
-        # Convert chains to closed positions format
+        # Identify closed positions (positions that were opened but are no longer current)
         closed_positions = []
-        for chain in closed_chains:
-            # Extract chain data
-            chain_data = chain.chain_data or {}
-            orders = chain_data.get("orders", [])
+        
+        logger.info(f"Found {len(position_orders)} unique positions from orders")
+        logger.info(f"Found {len(open_position_keys)} currently open positions")
+        
+        for position_key, orders in position_orders.items():
+            # Skip if this position is still open
+            if position_key in open_position_keys:
+                logger.debug(f"Skipping {position_key} - still open")
+                continue
             
-            # Create a closed position entry from the chain
-            closed_position = {
-                "underlying_symbol": chain.underlying_symbol,
-                "chain_id": chain.chain_id,
-                "initial_strategy": chain.initial_strategy,
-                "start_date": chain.start_date.isoformat() if chain.start_date else None,
-                "close_date": chain.last_activity_date.isoformat() if chain.last_activity_date else None,
-                "total_orders": len(orders),
-                "roll_count": chain.roll_count,
-                "total_credits_collected": chain.total_credits_collected,
-                "total_debits_paid": chain.total_debits_paid,
-                "net_premium": float(chain.net_premium) if chain.net_premium else 0,
-                "total_pnl": float(chain.total_pnl) if chain.total_pnl else 0,
-                "final_strike": None,
-                "final_expiry": None,
-                "final_option_type": None,
-                "days_held": None,
-                "win_loss": "win" if (chain.total_pnl or 0) > 0 else "loss",
-                "enhanced_chain": chain_data.get("enhanced", False),
-                "chain_type": chain_data.get("chain_type", "regular")
-            }
+            logger.info(f"Found closed position: {position_key}")
             
-            # Get final position details from the last order
-            if orders:
-                last_order = orders[-1]
-                # Try to get final position from roll_details.open_position
-                if "roll_details" in last_order and "open_position" in last_order["roll_details"]:
-                    open_pos = last_order["roll_details"]["open_position"]
-                    closed_position["final_strike"] = open_pos.get("strike_price")
-                    closed_position["final_expiry"] = open_pos.get("expiration_date")
-                    closed_position["final_option_type"] = open_pos.get("option_type")
+            # Sort orders by date to get chronological order
+            orders.sort(key=lambda x: x.get('created_at', ''))
+            
+            # Find opening and closing orders
+            opening_orders = [order for order in orders if order.get('position_effect') == 'open']
+            closing_orders = [order for order in orders if order.get('position_effect') == 'close']
+            
+            if not opening_orders:
+                continue  # No opening order, skip
+            
+            # Get the first opening order for position details
+            opening_order = opening_orders[0]
+            
+            # Calculate total opening premium
+            opening_premium = 0
+            for order in opening_orders:
+                premium = order.get('processed_premium', 0)
+                if order.get('processed_premium_direction') == 'credit':
+                    opening_premium += premium
                 else:
-                    # Fallback to order details
-                    closed_position["final_strike"] = last_order.get("strike_price")
-                    closed_position["final_expiry"] = last_order.get("expiration_date")
-                    closed_position["final_option_type"] = last_order.get("option_type")
+                    opening_premium -= premium
+            
+            # Calculate total closing premium
+            closing_premium = 0
+            close_date = None
+            for order in closing_orders:
+                premium = order.get('processed_premium', 0)
+                if order.get('processed_premium_direction') == 'credit':
+                    closing_premium += premium
+                else:
+                    closing_premium -= premium
+                close_date = order.get('updated_at', order.get('created_at'))
+            
+            # If no explicit closing orders, assume expired worthless or assigned
+            if not closing_orders:
+                close_date = opening_order.get('expiration_date')
+                # For short positions, expiring worthless is good (keep the premium)
+                # For long positions, expiring worthless is bad (lose the premium)
+                if opening_order.get('transaction_side') == 'sell':
+                    # Short position expired worthless - keep the credit
+                    closing_premium = 0
+                else:
+                    # Long position expired worthless - lose the debit paid
+                    closing_premium = 0
+            
+            # Calculate total P&L
+            total_pnl = opening_premium + closing_premium
             
             # Calculate days held
-            if chain.start_date and chain.last_activity_date:
+            days_held = None
+            start_date = opening_order.get('created_at')
+            if start_date and close_date:
                 try:
-                    days_held = (chain.last_activity_date - chain.start_date).days
-                    closed_position["days_held"] = days_held
+                    start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                    if close_date.endswith('Z') or '+' in close_date:
+                        close_dt = datetime.fromisoformat(close_date.replace('Z', '+00:00'))
+                    else:
+                        # Assume it's just a date for expiration
+                        close_dt = datetime.strptime(close_date, '%Y-%m-%d')
+                    days_held = (close_dt - start_dt).days
                 except:
                     pass
             
+            # Create closed position entry
+            closed_position = {
+                "underlying_symbol": opening_order.get('underlying_symbol'),
+                "strike_price": opening_order.get('strike_price'),
+                "expiration_date": opening_order.get('expiration_date'),
+                "option_type": opening_order.get('option_type'),
+                "strategy": opening_order.get('strategy', opening_order.get('opening_strategy', 'UNKNOWN')),
+                "initial_strategy": opening_order.get('opening_strategy', opening_order.get('strategy', 'UNKNOWN')),
+                "start_date": start_date,
+                "close_date": close_date,
+                "opening_premium": opening_premium,
+                "closing_premium": closing_premium,
+                "net_premium": opening_premium,
+                "total_pnl": total_pnl,
+                "total_orders": len(orders),
+                "opening_orders": len(opening_orders),
+                "closing_orders": len(closing_orders),
+                "days_held": days_held,
+                "win_loss": "win" if total_pnl > 0 else "loss",
+                "position_type": "short" if opening_order.get('transaction_side') == 'sell' else "long",
+                "closed_explicitly": len(closing_orders) > 0,
+                "chain_id": opening_order.get('chain_id'),
+                
+                # For backwards compatibility with frontend
+                "final_strike": opening_order.get('strike_price'),
+                "final_expiry": opening_order.get('expiration_date'),
+                "final_option_type": opening_order.get('option_type'),
+                "total_credits_collected": max(0, opening_premium) if opening_premium > 0 else 0,
+                "total_debits_paid": abs(min(0, opening_premium)) if opening_premium < 0 else 0,
+                "enhanced_chain": False,
+                "chain_type": "regular"
+            }
+            
             closed_positions.append(closed_position)
         
-        # Apply additional filters
+        # Apply filters
+        if underlying_symbol:
+            closed_positions = [pos for pos in closed_positions if pos.get("underlying_symbol", "").upper() == underlying_symbol.upper()]
+        
         if strategy:
-            closed_positions = [pos for pos in closed_positions if strategy.upper() in pos.get("initial_strategy", "").upper()]
+            closed_positions = [pos for pos in closed_positions if strategy.upper() in pos.get("strategy", "").upper()]
         
         if option_type:
-            closed_positions = [pos for pos in closed_positions if pos.get("final_option_type", "").lower() == option_type.lower()]
+            closed_positions = [pos for pos in closed_positions if pos.get("option_type", "").lower() == option_type.lower()]
         
         # Sort positions
         reverse = sort_order == "desc"
         valid_sort_fields = [
             "underlying_symbol", "close_date", "start_date", "total_pnl", 
-            "net_premium", "total_orders", "roll_count", "days_held"
+            "net_premium", "total_orders", "days_held", "strike_price"
         ]
         
         if sort_by in valid_sort_fields:
