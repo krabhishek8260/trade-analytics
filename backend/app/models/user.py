@@ -29,6 +29,7 @@ class User(Base):
     robinhood_username = Column(String, nullable=True)
     robinhood_password_hash = Column(Text, nullable=True)
     robinhood_mfa_code = Column(String, nullable=True)
+    robinhood_user_id = Column(String, nullable=True, index=True)  # Store Robinhood API user ID
     
     # Preferences
     theme = Column(String, default="light")  # light/dark

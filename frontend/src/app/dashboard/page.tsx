@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { getDashboardData, checkAuthStatus, PortfolioSummary, StocksSummary, OptionsSummary, PortfolioGreeks, getPortfolioGreeks, ApiError, getRolledOptionsChains, getRolledOptionsChainDetails, OptionsChain } from '@/lib/api'
+import { getDashboardData, checkAuthStatus, PortfolioSummary, StocksSummary, OptionsSummary, PortfolioGreeks, getPortfolioGreeks, ApiError, getRolledOptionsChains, getRolledOptionsChainDetails, OptionsChain, forceOptionsPositionsRefresh } from '@/lib/api'
 import { AnalysisTab } from '@/components/analysis'
 import { InteractiveMetricCard } from '@/components/breakdown'
 import { RolledOptionsSection } from '@/components/RolledOptionsSection'
@@ -210,7 +210,7 @@ function StocksTab({ stocks, formatCurrency, formatPercent }: {
 }
 
 // Options Tab Component
-function OptionsTab({ options, greeks, formatCurrency, formatPercent, onToggleChains, showChains, onChainClick }: {
+function OptionsTab({ options, greeks, formatCurrency, formatPercent, onToggleChains, showChains, onChainClick, refreshing }: {
   options: OptionsSummary | null
   greeks: PortfolioGreeks | null
   formatCurrency: (value: number) => string
@@ -218,6 +218,7 @@ function OptionsTab({ options, greeks, formatCurrency, formatPercent, onToggleCh
   onToggleChains?: () => void
   showChains?: boolean
   onChainClick?: (chainId: string) => void
+  refreshing?: boolean
 }) {
   const [optionsExpanded, setOptionsExpanded] = useState(false)
   const [symbolsExpanded, setSymbolsExpanded] = useState(false)
@@ -226,8 +227,18 @@ function OptionsTab({ options, greeks, formatCurrency, formatPercent, onToggleCh
   if (!options || options.positions.length === 0) {
     return (
       <div className="text-center py-8">
-        <p className="text-muted-foreground mb-4">No options positions found.</p>
-        <p className="text-sm text-muted-foreground">Options positions will appear here when available.</p>
+        {refreshing ? (
+          <>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-muted-foreground mb-4">Refreshing options positions...</p>
+            <p className="text-sm text-muted-foreground">Please wait while we fetch the latest data.</p>
+          </>
+        ) : (
+          <>
+            <p className="text-muted-foreground mb-4">No options positions found.</p>
+            <p className="text-sm text-muted-foreground">Options positions will appear here when available.</p>
+          </>
+        )}
       </div>
     )
   }
@@ -659,30 +670,29 @@ function OptionsTab({ options, greeks, formatCurrency, formatPercent, onToggleCh
 
 
 export default function Dashboard() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const router = useRouter()
   const [isLoading, setIsLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<TabType>('portfolio')
-  const [showChains, setShowChains] = useState(true)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [dataLoading, setDataLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const [dashboardData, setDashboardData] = useState<DashboardData>({
     portfolio: null,
     stocks: null,
     options: null,
     greeks: null
   })
-  const [dataLoading, setDataLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [activeTab, setActiveTab] = useState<TabType>('portfolio')
+  const [showChains, setShowChains] = useState(false)
+  const [selectedChainId, setSelectedChainId] = useState<string | null>(null)
+  const [chainDetails, setChainDetails] = useState<OptionsChain | null>(null)
+  const [chainLoading, setChainLoading] = useState(false)
   
   // Auto-refresh state
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true)
   const [refreshInterval, setRefreshInterval] = useState(30000) // 30 seconds default
   const [showRefreshNotification, setShowRefreshNotification] = useState(false)
-  
-  // Chain modal state
-  const [selectedChainId, setSelectedChainId] = useState<string | null>(null)
-  const [chainDetails, setChainDetails] = useState<OptionsChain | null>(null)
-  const [chainLoading, setChainLoading] = useState(false)
-  const router = useRouter()
 
   useEffect(() => {
     // Check authentication status
@@ -735,6 +745,17 @@ export default function Dashboard() {
     }
   }, [showChains])
 
+  // Auto-refresh data on mount when authenticated
+  useEffect(() => {
+    if (isAuthenticated && !dataLoading && !dashboardData.options) {
+      // Small delay to ensure authentication is fully established
+      const timer = setTimeout(() => {
+        fetchDashboardData()
+      }, 1000)
+      return () => clearTimeout(timer)
+    }
+  }, [isAuthenticated, dataLoading, dashboardData.options])
+
   const fetchDashboardData = async () => {
     if (!isAuthenticated) return
 
@@ -749,8 +770,42 @@ export default function Dashboard() {
           return null
         })
       ])
-      setDashboardData({ ...data, greeks })
-      setLastUpdated(new Date())
+      
+      // Check if options data is empty and retry once
+      if (!data.options || data.options.positions.length === 0) {
+        console.log('Options data is empty, forcing refresh...')
+        setRefreshing(true)
+        try {
+          // Force refresh the options positions cache
+          const refreshResult = await forceOptionsPositionsRefresh()
+          console.log('Refresh result:', refreshResult)
+          
+          if (refreshResult.success && refreshResult.fresh_data) {
+            // Fetch data again after refresh
+            const retryData = await getDashboardData(showChains)
+            if (retryData.options && retryData.options.positions.length > 0) {
+              console.log('Refresh successful, updating data...')
+              setDashboardData({ ...retryData, greeks })
+              setLastUpdated(new Date())
+            } else {
+              setDashboardData({ ...data, greeks })
+              setLastUpdated(new Date())
+            }
+          } else {
+            setDashboardData({ ...data, greeks })
+            setLastUpdated(new Date())
+          }
+        } catch (refreshError) {
+          console.error('Refresh failed:', refreshError)
+          setDashboardData({ ...data, greeks })
+          setLastUpdated(new Date())
+        } finally {
+          setRefreshing(false)
+        }
+      } else {
+        setDashboardData({ ...data, greeks })
+        setLastUpdated(new Date())
+      }
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error)
       if (error instanceof ApiError && error.statusCode === 401) {
@@ -1102,7 +1157,7 @@ export default function Dashboard() {
                     <>
                       {activeTab === 'portfolio' && <PortfolioTab dashboardData={dashboardData} formatCurrency={formatCurrency} formatPercent={formatPercent} />}
                       {activeTab === 'stocks' && <StocksTab stocks={dashboardData.stocks} formatCurrency={formatCurrency} formatPercent={formatPercent} />}
-                      {activeTab === 'options' && <OptionsTab options={dashboardData.options} greeks={dashboardData.greeks} formatCurrency={formatCurrency} formatPercent={formatPercent} onToggleChains={handleToggleChains} showChains={showChains} onChainClick={handleChainClick} />}
+                      {activeTab === 'options' && <OptionsTab options={dashboardData.options} greeks={dashboardData.greeks} formatCurrency={formatCurrency} formatPercent={formatPercent} onToggleChains={handleToggleChains} showChains={showChains} onChainClick={handleChainClick} refreshing={refreshing} />}
                       {activeTab === 'analysis' && <AnalysisTab formatCurrency={formatCurrency} formatPercent={formatPercent} />}
                     </>
                   )}

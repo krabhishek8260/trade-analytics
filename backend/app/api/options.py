@@ -913,6 +913,44 @@ async def force_pnl_recalculation(
         )
 
 
+@router.post("/positions/refresh",
+    response_model=DataResponse,
+    summary="Force options positions refresh",
+    description="Clear cache and force fresh options positions fetch",
+    responses={
+        200: {"description": "Positions refresh triggered successfully"},
+        401: {"description": "Unauthorized", "model": ErrorResponse},
+        500: {"description": "Internal server error", "model": ErrorResponse}
+    }
+)
+async def force_positions_refresh(
+    rh_service: RobinhoodService = Depends(get_robinhood_service)
+):
+    """Force fresh options positions fetch by clearing cache"""
+    try:
+        # Clear the options positions cache
+        from app.core.redis import cache
+        cache_key = "options:positions"
+        await cache.delete(cache_key)
+        
+        # Force a fresh fetch
+        result = await rh_service.get_options_positions()
+        
+        return DataResponse(data={
+            "success": True,
+            "message": "Options positions cache cleared and refreshed",
+            "positions_count": len(result.get("data", [])),
+            "fresh_data": result.get("success", False)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error forcing positions refresh: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+
+
 @router.get(
     "/history",
     response_model=ListResponse,

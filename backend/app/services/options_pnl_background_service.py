@@ -33,6 +33,69 @@ class OptionsPnLBackgroundService:
     def __init__(self):
         self.processing_users = set()  # Track users currently being processed
     
+    async def _ensure_user_exists(self, db: AsyncSession, user_id: UUID) -> bool:
+        """
+        Ensure user exists in database, create demo user if needed
+        
+        Args:
+            db: Database session
+            user_id: User UUID to check
+            
+        Returns:
+            True if user exists, False otherwise
+        """
+        try:
+            from app.models.user import User
+            from app.core.security import ensure_demo_user_exists
+            
+            # Check if user exists
+            stmt = select(User).where(User.id == user_id)
+            result = await db.execute(stmt)
+            user = result.scalar_one_or_none()
+            
+            if user:
+                return True
+            
+            # If it's the demo user, ensure it exists
+            if str(user_id) == "00000000-0000-0000-0000-000000000001":
+                await ensure_demo_user_exists(db)
+                # Re-check after ensuring demo user exists
+                result = await db.execute(stmt)
+                user = result.scalar_one_or_none()
+                return user is not None
+            
+            # For other users, they should be created by the authentication system
+            # If they don't exist, it's an error
+            logger.error(f"User {user_id} does not exist in database")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error ensuring user exists: {str(e)}")
+            return False
+    
+    async def _handle_session_error(self, db: AsyncSession, error: Exception) -> bool:
+        """
+        Handle session errors like PendingRollbackError
+        
+        Args:
+            db: Database session
+            error: The exception that occurred
+            
+        Returns:
+            True if error was handled, False otherwise
+        """
+        try:
+            from sqlalchemy.exc import PendingRollbackError
+            
+            if isinstance(error, PendingRollbackError):
+                logger.warning("Session has pending rollback, attempting to rollback and continue")
+                await db.rollback()
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error handling session error: {str(e)}")
+            return False
+    
     async def process_user_pnl(
         self, 
         user_id: UUID, 
@@ -60,6 +123,13 @@ class OptionsPnLBackgroundService:
         
         async with AsyncSessionLocal() as db:
             try:
+                # First, ensure the user exists in the database
+                if not await self._ensure_user_exists(db, user_id):
+                    return {
+                        "success": False,
+                        "message": f"User {user_id} does not exist in database"
+                    }
+                
                 # Create processing log entry
                 log_entry = OptionsPnLProcessingLog(
                     user_id=user_id,
@@ -99,47 +169,54 @@ class OptionsPnLBackgroundService:
                 # Update cache with results
                 await self._update_cache_with_results(db, user_id, final_metrics, orders_data, positions_data)
                 
-                # Update processing log
+                # Update processing log with success
                 processing_time = time.time() - start_time
-                log_entry.status = "completed"
-                log_entry.completed_at = datetime.utcnow()
-                log_entry.processing_time_seconds = round(processing_time, 3)
-                log_entry.orders_found = len(orders_data)
-                log_entry.orders_processed = len(orders_data)
-                log_entry.trades_matched = realized_data.get("trade_count", 0)
-                log_entry.positions_processed = len(positions_data)
-                log_entry.total_pnl_calculated = final_metrics["total_pnl"]
-                
-                await db.commit()
+                await self._update_processing_log(db, log_entry.id, "completed", processing_time, final_metrics)
                 
                 logger.info(f"P&L processing completed for user {user_id} in {processing_time:.2f}s")
                 
                 return {
                     "success": True,
-                    "message": f"P&L processing completed in {processing_time:.2f}s",
-                    "data": final_metrics
+                    "message": "P&L processing completed successfully",
+                    "processing_time": processing_time,
+                    "orders_processed": len(orders_data),
+                    "positions_processed": len(positions_data)
                 }
                 
             except Exception as e:
                 logger.error(f"Error processing P&L for user {user_id}: {str(e)}")
-                logger.error(traceback.format_exc())
+                logger.error(f"Traceback: {traceback.format_exc()}")
                 
-                # Update log with error
-                log_entry.status = "error"
-                log_entry.completed_at = datetime.utcnow()
-                log_entry.error_message = str(e)
-                log_entry.error_details = {"traceback": traceback.format_exc()}
-                
-                # Update cache status to error
-                await self._update_cache_status(db, user_id, "error", str(e))
-                
-                await db.commit()
+                # Handle session errors first
+                if await self._handle_session_error(db, e):
+                    # If session error was handled, try to continue with error reporting
+                    try:
+                        await self._update_cache_status(db, user_id, "error", str(e))
+                    except Exception as update_error:
+                        logger.error(f"Error updating cache status after session recovery: {str(update_error)}")
+                    
+                    try:
+                        if 'log_entry' in locals():
+                            await self._update_processing_log(db, log_entry.id, "error", None, None, str(e))
+                    except Exception as log_error:
+                        logger.error(f"Error updating processing log after session recovery: {str(log_error)}")
+                else:
+                    # Regular error handling
+                    try:
+                        await self._update_cache_status(db, user_id, "error", str(e))
+                    except Exception as update_error:
+                        logger.error(f"Error updating cache status: {str(update_error)}")
+                    
+                    try:
+                        if 'log_entry' in locals():
+                            await self._update_processing_log(db, log_entry.id, "error", None, None, str(e))
+                    except Exception as log_error:
+                        logger.error(f"Error updating processing log: {str(log_error)}")
                 
                 return {
                     "success": False,
                     "message": f"P&L processing failed: {str(e)}"
                 }
-                
             finally:
                 self.processing_users.discard(user_id)
     
@@ -186,6 +263,12 @@ class OptionsPnLBackgroundService:
         error_message: Optional[str] = None
     ):
         """Update cache status"""
+        # First, ensure the user exists in the database
+        if not await self._ensure_user_exists(db, user_id):
+            logger.error(f"User {user_id} does not exist in database, cannot update cache status")
+            return
+        
+        # Now update or create cache entry
         stmt = select(UserOptionsPnLCache).where(UserOptionsPnLCache.user_id == user_id)
         result = await db.execute(stmt)
         cache_entry = result.scalar_one_or_none()
@@ -550,6 +633,40 @@ class OptionsPnLBackgroundService:
         
         return sorted(symbol_list, key=lambda x: x["total_pnl"], reverse=True)
     
+    async def _update_processing_log(
+        self,
+        db: AsyncSession,
+        log_id: UUID,
+        status: str,
+        processing_time: Optional[float] = None,
+        metrics: Optional[Dict[str, Any]] = None,
+        error_message: Optional[str] = None
+    ):
+        """Update processing log entry with results or error"""
+        stmt = select(OptionsPnLProcessingLog).where(OptionsPnLProcessingLog.id == log_id)
+        result = await db.execute(stmt)
+        log_entry = result.scalar_one_or_none()
+        
+        if log_entry:
+            log_entry.status = status
+            log_entry.completed_at = datetime.utcnow()
+            
+            if processing_time is not None:
+                log_entry.processing_time_seconds = round(processing_time, 3)
+            
+            if metrics is not None:
+                log_entry.orders_found = metrics.get("total_trades", 0)
+                log_entry.orders_processed = metrics.get("total_trades", 0)
+                log_entry.trades_matched = metrics.get("realized_trades", 0)
+                log_entry.positions_processed = metrics.get("open_positions", 0)
+                log_entry.total_pnl_calculated = metrics.get("total_pnl", 0)
+            
+            if error_message is not None:
+                log_entry.error_message = error_message
+                log_entry.error_details = {"traceback": traceback.format_exc()}
+            
+            await db.commit()
+    
     async def _update_cache_with_results(
         self, 
         db: AsyncSession, 
@@ -559,6 +676,12 @@ class OptionsPnLBackgroundService:
         positions: List[OptionsPosition]
     ):
         """Update cache with calculated results"""
+        # First, ensure the user exists in the database
+        if not await self._ensure_user_exists(db, user_id):
+            logger.error(f"User {user_id} does not exist in database, cannot update cache with results")
+            return
+        
+        # Now update or create cache entry
         stmt = select(UserOptionsPnLCache).where(UserOptionsPnLCache.user_id == user_id)
         result = await db.execute(stmt)
         cache_entry = result.scalar_one_or_none()

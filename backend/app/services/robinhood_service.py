@@ -28,6 +28,7 @@ class RobinhoodService:
         os.makedirs(self.debug_dir, exist_ok=True)
         self._authenticated = False
         self.username = None
+        self.robinhood_user_id = None  # Store Robinhood user ID
         
         # Auto-authenticate if credentials are provided
         if settings.ROBINHOOD_USERNAME and settings.ROBINHOOD_PASSWORD:
@@ -87,6 +88,16 @@ class RobinhoodService:
             if login_result and login_result.get('access_token'):
                 self._authenticated = True
                 self.username = username
+                
+                # Get user ID from Robinhood API
+                try:
+                    user_id = await self._get_robinhood_user_id()
+                    self.robinhood_user_id = user_id
+                    logger.info(f"Retrieved Robinhood user ID: {user_id}")
+                except Exception as e:
+                    logger.warning(f"Could not retrieve Robinhood user ID: {str(e)}")
+                    self.robinhood_user_id = None
+                
                 logger.info(f"Successfully logged in user: {username}")
                 return {"success": True, "message": "Login successful"}
             else:
@@ -104,6 +115,7 @@ class RobinhoodService:
             await loop.run_in_executor(None, rh.logout)
             self._authenticated = False
             self.username = None
+            self.robinhood_user_id = None
             logger.info("User logged out successfully")
             return {"success": True, "message": "Logged out successfully"}
         except Exception as e:
@@ -129,6 +141,10 @@ class RobinhoodService:
     def get_username(self) -> Optional[str]:
         """Get the current username"""
         return self.username
+    
+    def get_robinhood_user_id(self) -> Optional[str]:
+        """Get the Robinhood user ID"""
+        return self.robinhood_user_id
     
     async def verify_session(self) -> Dict[str, Any]:
         """Verify that the current session is still valid"""
@@ -1263,3 +1279,25 @@ class RobinhoodService:
             symbol_list.append(symbol_data)
         
         return sorted(symbol_list, key=lambda x: x["total_pnl"], reverse=True)
+
+    async def _get_robinhood_user_id(self) -> Optional[str]:
+        """Get Robinhood user ID from API"""
+        try:
+            loop = asyncio.get_event_loop()
+            
+            # Try to get user profile first
+            user_profile = await loop.run_in_executor(None, rh.load_user_profile)
+            if user_profile and user_profile.get('id'):
+                return user_profile['id']
+            
+            # Fallback to account profile
+            account_profile = await loop.run_in_executor(None, rh.load_account_profile)
+            if account_profile and account_profile.get('id'):
+                return account_profile['id']
+            
+            logger.warning("Could not retrieve Robinhood user ID from API")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error getting Robinhood user ID: {str(e)}")
+            return None

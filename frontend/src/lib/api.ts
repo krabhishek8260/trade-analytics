@@ -926,7 +926,15 @@ export async function triggerPnLProcessing(force = false): Promise<{ success: bo
 export async function getPnLProcessingStatus(): Promise<{ status: string; message?: string; last_calculated?: string }> {
   const response = await apiRequest<ApiResponse<{ status: string; message?: string; last_calculated?: string }>>('/options/pnl/status')
   if (!response.data) {
-    throw new ApiError(500, 'No processing status received')
+    throw new ApiError(500, 'No P&L processing status received')
+  }
+  return response.data
+}
+
+export async function forceOptionsPositionsRefresh(): Promise<{ success: boolean; message: string; positions_count: number; fresh_data: boolean }> {
+  const response = await apiRequest<ApiResponse<{ success: boolean; message: string; positions_count: number; fresh_data: boolean }>>('/options/positions/refresh', 30000)
+  if (!response.data) {
+    throw new ApiError(500, 'No refresh response received')
   }
   return response.data
 }

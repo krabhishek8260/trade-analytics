@@ -6,20 +6,18 @@ Rolled options are positions that have been "rolled" - closed and reopened with
 different strikes or expiration dates to manage risk or capture additional premium.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi import status as http_status
-from typing import Optional
-from datetime import datetime, timedelta
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional, List
 import logging
-import asyncio
 
+from app.core.database import get_db
+from app.models.user import User
 from app.services.robinhood_service import RobinhoodService
-from app.services.optimized_rolled_options_service import OptimizedRolledOptionsService
+from app.services.rolled_options_service import RolledOptionsService
 from app.services.json_rolled_options_service import JsonRolledOptionsService
 from app.schemas.common import DataResponse, ListResponse, ErrorResponse
-from app.models.user import User
-from app.core.database import get_db
-from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +28,9 @@ def get_robinhood_service() -> RobinhoodService:
     return RobinhoodService()
 
 
-def get_optimized_rolled_options_service(rh_service: RobinhoodService = Depends(get_robinhood_service)) -> OptimizedRolledOptionsService:
+def get_optimized_rolled_options_service(rh_service: RobinhoodService = Depends(get_robinhood_service)) -> RolledOptionsService:
     """Dependency to get optimized rolled options service instance"""
-    return OptimizedRolledOptionsService(rh_service)
+    return RolledOptionsService(rh_service)
 
 
 def get_json_rolled_options_service() -> JsonRolledOptionsService:
@@ -47,31 +45,78 @@ async def get_authenticated_user_id(rh_service: RobinhoodService = Depends(get_r
             # Return demo user for non-authenticated requests
             return "00000000-0000-0000-0000-000000000001"
         
-        # Get username from authenticated session
-        username = rh_service.get_username()
-        if not username:
-            return "00000000-0000-0000-0000-000000000001"
+        # Get Robinhood user ID from API
+        robinhood_user_id = rh_service.get_robinhood_user_id()
+        if not robinhood_user_id:
+            # Fallback to username-based lookup
+            username = rh_service.get_username()
+            if not username:
+                return "00000000-0000-0000-0000-000000000001"
+            
+            # Find or create user in database by username
+            async for db in get_db():
+                # Try to find existing user by Robinhood username
+                stmt = select(User).where(User.robinhood_username == username)
+                result = await db.execute(stmt)
+                user = result.scalar_one_or_none()
+                
+                if user:
+                    return str(user.id)
+                
+                # Create new user for this Robinhood account
+                import uuid
+                from sqlalchemy.dialects.postgresql import insert
+                
+                new_user_id = str(uuid.uuid4())
+                user_record = {
+                    "id": new_user_id,
+                    "email": f"{username}@robinhood.local",
+                    "full_name": f"Robinhood User ({username})",
+                    "robinhood_username": username,
+                    "robinhood_user_id": None,  # No Robinhood user ID available in fallback
+                    "is_active": True
+                }
+                
+                insert_stmt = insert(User).values(user_record)
+                upsert_stmt = insert_stmt.on_conflict_do_nothing(index_elements=["id"])
+                await db.execute(upsert_stmt)
+                await db.commit()
+                
+                logger.info(f"Created new user {new_user_id} for Robinhood account {username}")
+                return new_user_id
         
-        # Find or create user in database
+        # Use Robinhood user ID as the primary identifier
+        # Convert to UUID format if needed
+        try:
+            import uuid
+            # Try to parse as UUID first
+            user_uuid = uuid.UUID(robinhood_user_id)
+            user_id_str = str(user_uuid)
+        except ValueError:
+            # If not a valid UUID, create a deterministic UUID from the string
+            import hashlib
+            hash_obj = hashlib.md5(robinhood_user_id.encode())
+            user_uuid = uuid.UUID(hash_obj.hexdigest())
+            user_id_str = str(user_uuid)
+        
+        # Find or create user in database by Robinhood user ID
         async for db in get_db():
-            # Try to find existing user by Robinhood username
-            stmt = select(User).where(User.robinhood_username == username)
+            # Try to find existing user by Robinhood user ID
+            stmt = select(User).where(User.id == user_uuid)
             result = await db.execute(stmt)
             user = result.scalar_one_or_none()
             
             if user:
-                return str(user.id)
+                return user_id_str
             
             # Create new user for this Robinhood account
-            import uuid
-            from sqlalchemy.dialects.postgresql import insert
-            
-            new_user_id = str(uuid.uuid4())
+            username = rh_service.get_username() or "robinhood_user"
             user_record = {
-                "id": new_user_id,
+                "id": user_id_str,
                 "email": f"{username}@robinhood.local",
                 "full_name": f"Robinhood User ({username})",
                 "robinhood_username": username,
+                "robinhood_user_id": robinhood_user_id,  # Store the original Robinhood user ID
                 "is_active": True
             }
             
@@ -80,8 +125,8 @@ async def get_authenticated_user_id(rh_service: RobinhoodService = Depends(get_r
             await db.execute(upsert_stmt)
             await db.commit()
             
-            logger.info(f"Created new user {new_user_id} for Robinhood account {username}")
-            return new_user_id
+            logger.info(f"Created new user {user_id_str} for Robinhood user ID {robinhood_user_id}")
+            return user_id_str
             
     except Exception as e:
         logger.error(f"Error getting authenticated user: {str(e)}")
@@ -107,7 +152,7 @@ async def get_rolled_options_chains(
     limit: int = Query(50, ge=10, le=200, description="Number of chains per page"),
     use_json: bool = Query(True, description="Use JSON-based analysis (more accurate)"),
     json_service: JsonRolledOptionsService = Depends(get_json_rolled_options_service),
-    optimized_service: OptimizedRolledOptionsService = Depends(get_optimized_rolled_options_service),
+    optimized_service: RolledOptionsService = Depends(get_optimized_rolled_options_service),
     user_id: str = Depends(get_authenticated_user_id)
 ):
     """
@@ -182,7 +227,7 @@ async def get_rolled_options_chains(
         
         if not result.get("success", False):
             raise HTTPException(
-                status_code=http_status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail=result.get("message", "Failed to analyze rolled options chains")
             )
         
@@ -241,7 +286,7 @@ async def get_rolled_options_chains(
     except Exception as e:
         logger.error(f"Error retrieving rolled options chains: {str(e)}")
         raise HTTPException(
-            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error"
         )
 
@@ -256,7 +301,7 @@ async def get_rolled_options_chains(
 )
 async def get_rolled_options_chain_details(
     chain_id: str,
-    optimized_service: OptimizedRolledOptionsService = Depends(get_optimized_rolled_options_service)
+    optimized_service: RolledOptionsService = Depends(get_optimized_rolled_options_service)
 ):
     """
     Get detailed information about a specific rolled options chain
@@ -316,7 +361,7 @@ async def get_rolled_options_chain_details(
 )
 async def get_rolled_options_summary(
     days_back: int = Query(365, ge=30, le=1095, description="Number of days back to analyze"),
-    optimized_service: OptimizedRolledOptionsService = Depends(get_optimized_rolled_options_service)
+    optimized_service: RolledOptionsService = Depends(get_optimized_rolled_options_service)
 ):
     """
     Get summary statistics for all rolled options activity
@@ -367,7 +412,7 @@ async def get_symbol_rolled_chains(
     symbol: str,
     days_back: int = Query(365, ge=30, le=1095, description="Number of days back to analyze"),
     status: Optional[str] = Query(None, regex="^(active|closed|expired)$", description="Filter by chain status"),
-    optimized_service: OptimizedRolledOptionsService = Depends(get_optimized_rolled_options_service)
+    optimized_service: RolledOptionsService = Depends(get_optimized_rolled_options_service)
 ):
     """
     Get all rolled options chains for a specific underlying symbol
