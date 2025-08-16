@@ -36,7 +36,7 @@ export interface StockPosition {
 }
 
 export interface OptionPosition {
-  underlying_symbol: string
+  chain_symbol: string
   strike_price: number
   expiration_date: string
   option_type: string
@@ -367,6 +367,26 @@ class ApiError extends Error {
   }
 }
 
+// Helper function to get JWT token from localStorage
+function getAuthToken(): string | null {
+  if (typeof window === 'undefined') return null
+  return localStorage.getItem('auth_token')
+}
+
+// Helper function to get auth headers
+function getAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Cache-Control': 'no-cache',
+  }
+  
+  const token = getAuthToken()
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+  
+  return headers
+}
+
 async function apiRequest<T>(endpoint: string, timeout: number = 60000): Promise<T> {
   try {
     // Create an AbortController for timeout handling
@@ -375,9 +395,7 @@ async function apiRequest<T>(endpoint: string, timeout: number = 60000): Promise
     
     const response = await fetch(`${API_BASE}${endpoint}`, {
       signal: controller.signal,
-      headers: {
-        'Cache-Control': 'no-cache',
-      }
+      headers: getAuthHeaders()
     })
     
     clearTimeout(timeoutId)
@@ -447,8 +465,69 @@ export async function getPortfolioGreeks(): Promise<PortfolioGreeks> {
   return response.data
 }
 
-// Historical Options Orders API
+// Enhanced Options Orders API with pagination
+export interface PaginatedOptionsOrdersResponse {
+  data: HistoricalOptionsOrder[]
+  pagination: {
+    page: number
+    limit: number
+    total: number
+    total_pages: number
+    has_next: boolean
+    has_prev: boolean
+  }
+  filters_applied: {
+    symbol?: string
+    state?: string
+    strategy?: string
+    option_type?: string
+    sort_by: string
+    sort_order: string
+  }
+  data_source: 'database' | 'api_fallback'
+}
+
 export async function getOptionsOrders(params?: {
+  page?: number
+  limit?: number
+  underlying_symbol?: string
+  state?: string
+  strategy?: string
+  option_type?: string
+  sort_by?: string
+  sort_order?: string
+}): Promise<PaginatedOptionsOrdersResponse> {
+  const queryParams = new URLSearchParams()
+  if (params?.page) queryParams.append('page', params.page.toString())
+  if (params?.limit) queryParams.append('limit', params.limit.toString())
+  if (params?.underlying_symbol) queryParams.append('underlying_symbol', params.underlying_symbol)
+  if (params?.state) queryParams.append('state', params.state)
+  if (params?.strategy) queryParams.append('strategy', params.strategy)
+  if (params?.option_type) queryParams.append('option_type', params.option_type)
+  if (params?.sort_by) queryParams.append('sort_by', params.sort_by)
+  if (params?.sort_order) queryParams.append('sort_order', params.sort_order)
+  
+  const url = `/options/orders${queryParams.toString() ? '?' + queryParams.toString() : ''}`
+  const response = await apiRequest<any>(url)
+  
+  // Return the enhanced response with pagination info
+  return {
+    data: response.data || [],
+    pagination: {
+      page: response.page || 1,
+      limit: response.limit || 50,
+      total: response.total || 0,
+      total_pages: response.total_pages || 1,
+      has_next: response.has_next || false,
+      has_prev: response.has_prev || false
+    },
+    filters_applied: response.filters_applied || {},
+    data_source: response.data_source || 'database'
+  }
+}
+
+// Legacy function for backward compatibility
+export async function getOptionsOrdersLegacy(params?: {
   limit?: number
   days_back?: number
   underlying_symbol?: string
@@ -457,18 +536,14 @@ export async function getOptionsOrders(params?: {
   option_type?: string
   transaction_side?: string
 }): Promise<HistoricalOptionsOrder[]> {
-  const queryParams = new URLSearchParams()
-  if (params?.limit) queryParams.append('limit', params.limit.toString())
-  if (params?.days_back) queryParams.append('days_back', params.days_back.toString())
-  if (params?.underlying_symbol) queryParams.append('underlying_symbol', params.underlying_symbol)
-  if (params?.state) queryParams.append('state', params.state)
-  if (params?.strategy) queryParams.append('strategy', params.strategy)
-  if (params?.option_type) queryParams.append('option_type', params.option_type)
-  if (params?.transaction_side) queryParams.append('transaction_side', params.transaction_side)
-  
-  const url = `/options/orders${queryParams.toString() ? '?' + queryParams.toString() : ''}`
-  const response = await apiRequest<ListResponse<HistoricalOptionsOrder>>(url)
-  return response.data || []
+  const paginatedResponse = await getOptionsOrders({
+    limit: params?.limit,
+    underlying_symbol: params?.underlying_symbol,
+    state: params?.state,
+    strategy: params?.strategy,
+    option_type: params?.option_type
+  })
+  return paginatedResponse.data
 }
 
 // Closed Options History API
@@ -684,7 +759,7 @@ export enum SortType {
 
 export interface PositionBreakdown {
   position_id: string
-  underlying_symbol: string
+  chain_symbol: string
   option_type: string
   strike_price: number
   expiration_date: string
@@ -782,11 +857,12 @@ export interface BreakdownRequest {
 // Enhanced API request function for POST requests
 async function apiPostRequest<T>(endpoint: string, data: any): Promise<T> {
   try {
+    const headers = getAuthHeaders()
+    headers['Content-Type'] = 'application/json'
+    
     const response = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers,
       body: JSON.stringify(data)
     })
     
@@ -935,6 +1011,41 @@ export async function forceOptionsPositionsRefresh(): Promise<{ success: boolean
   const response = await apiRequest<ApiResponse<{ success: boolean; message: string; positions_count: number; fresh_data: boolean }>>('/options/positions/refresh', 30000)
   if (!response.data) {
     throw new ApiError(500, 'No refresh response received')
+  }
+  return response.data
+}
+
+// Options Orders Sync API
+export interface OptionsOrdersSyncStatus {
+  user_id: string
+  total_orders: number
+  last_sync?: string
+  last_order_date?: string
+  needs_sync: boolean
+  sync_reason: string
+  sync_status: 'up_to_date' | 'sync_needed'
+}
+
+export async function getOptionsOrdersSyncStatus(): Promise<OptionsOrdersSyncStatus> {
+  const response = await apiRequest<ApiResponse<OptionsOrdersSyncStatus>>('/options/orders/sync-status')
+  if (!response.data) {
+    throw new ApiError(500, 'No sync status data received')
+  }
+  return response.data
+}
+
+export async function triggerOptionsOrdersSync(
+  forceFullSync = false,
+  daysBack = 30
+): Promise<{ orders_processed: number; orders_stored: number; sync_time: string; sync_type: string }> {
+  const queryParams = new URLSearchParams()
+  if (forceFullSync) queryParams.append('force_full_sync', 'true')
+  if (daysBack !== 30) queryParams.append('days_back', daysBack.toString())
+  
+  const url = `/options/orders/sync${queryParams.toString() ? '?' + queryParams.toString() : ''}`
+  const response = await apiPostRequest<ApiResponse<{ orders_processed: number; orders_stored: number; sync_time: string; sync_type: string }>>(url, {})
+  if (!response.data) {
+    throw new ApiError(500, 'No sync response received')
   }
   return response.data
 }

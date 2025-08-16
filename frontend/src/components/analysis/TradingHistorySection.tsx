@@ -80,7 +80,7 @@ export default function TradingHistorySection({
                   <div>
                     <div className="flex items-center space-x-2 mb-1">
                       <SymbolLogo 
-                        symbol={order.underlying_symbol || 'Unknown'} 
+                        symbol={order.chain_symbol || order.underlying_symbol || 'Unknown'} 
                         size="lg" 
                         showText={true}
                         className="font-medium text-lg"

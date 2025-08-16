@@ -435,7 +435,7 @@ class RobinhoodService:
                     days_to_expiry = self._calculate_days_to_expiry(expiration_date)
                     
                     pos_data = {
-                        "underlying_symbol": underlying_symbol,
+                        "chain_symbol": underlying_symbol,
                         "strike_price": strike_price,
                         "expiration_date": expiration_date,
                         "option_type": option_type,
@@ -542,32 +542,28 @@ class RobinhoodService:
         
         # Basic order info
         order_info = {
+            # Core Order Fields
             "order_id": order.get('id', ''),
-            "underlying_symbol": "UNKNOWN",
-            "strike_price": 0.0,
-            "expiration_date": "",
-            "option_type": "",
-            "transaction_side": "",
-            "position_effect": "",
-            "direction": order.get('direction', ''),
-            "quantity": float(order.get('quantity', 0)),
-            "price": float(order.get('price', 0)) if order.get('price') else 0,
-            "premium": float(order.get('premium', 0)) if order.get('premium') else 0,
-            "processed_premium": float(order.get('processed_premium', 0)) if order.get('processed_premium') else 0,
-            "processed_premium_direction": order.get('processed_premium_direction', ''),
             "state": order.get('state', ''),
-            "created_at": order.get('created_at', ''),
-            "updated_at": order.get('updated_at', ''),
             "type": order.get('type', 'limit'),
-            "legs_count": 0,
-            "legs_details": [],
-            "executions_count": 0,
-            # New fields for rolled options detection
             "chain_id": order.get('chain_id', ''),
             "chain_symbol": order.get('chain_symbol', ''),
-            "closing_strategy": order.get('closing_strategy'),
+            "underlying_symbol": order.get('chain_symbol', ''),  # Use chain_symbol directly
+            # Financial Fields
+            "processed_quantity": float(order.get('processed_quantity', 0)),
+            "processed_premium": float(order.get('processed_premium', 0)),
+            "premium": float(order.get('premium', 0)),  # premium per contract
+            "direction": order.get('direction', ''),  # credit or debit
+            # Strategy Fields
+            "strategy": order.get('strategy', ''),
             "opening_strategy": order.get('opening_strategy'),
-            "strategy": order.get('strategy', '')
+            "closing_strategy": order.get('closing_strategy'),
+            # Timing Fields
+            "created_at": order.get('created_at', ''),
+            "updated_at": order.get('updated_at', ''),
+            # Leg Information
+            "legs_count": 0,
+            "legs_details": []
         }
         
         # Process legs
@@ -580,63 +576,31 @@ class RobinhoodService:
                 leg_detail = {
                     "leg_index": i,
                     "side": leg.get('side', ''),
+                    "id": leg.get('id', ''),
                     "position_effect": leg.get('position_effect', ''),
                     "option_type": leg.get('option_type', ''),
-                    "quantity": float(leg.get('quantity', 0)),
-                    "ratio_quantity": float(leg.get('ratio_quantity', 0)),
-                    "instrument_url": leg.get('option', ''),
-                    "underlying_symbol": "UNKNOWN",
-                    "strike_price": 0.0,
-                    "expiration_date": "",
-                    "instrument_id": "",
-                    "executions_count": len(leg.get('executions', []))
+                    "strike_price": float(leg.get('strike_price', 0)),
+                    "expiration_date": leg.get('expiration_date', ''),
+                    "long_strategy_code": leg.get('long_strategy_code', ''),
+                    "short_strategy_code": leg.get('short_strategy_code', ''),
                 }
-                
-                # Get instrument details
-                instrument_url = leg.get('option', '')
-                if instrument_url:
-                    try:
-                        instrument_id = instrument_url.split('/')[-2] if '/' in instrument_url else ''
-                        leg_detail["instrument_id"] = instrument_id
-                        
-                        instrument_data = await loop.run_in_executor(
-                            None, lambda: rh.get_option_instrument_data_by_id(instrument_id)
-                        )
-                        
-                        if instrument_data:
-                            leg_detail.update({
-                                "underlying_symbol": self._extract_underlying_symbol(instrument_data),
-                                "strike_price": float(instrument_data.get('strike_price', 0)),
-                                "expiration_date": instrument_data.get('expiration_date', ''),
-                                "option_type": leg.get('option_type', '') or instrument_data.get('type', ''),
-                            })
-                    except Exception as e:
-                        logger.warning(f"Could not get instrument data for leg {i}: {str(e)}")
                 
                 leg_details.append(leg_detail)
             
+            # Store full legs data as JSONB
             order_info["legs_details"] = leg_details
             
-            # Use first leg for primary order info
-            if leg_details:
-                first_leg = leg_details[0]
-                order_info.update({
-                    "transaction_side": first_leg.get('side', ''),
-                    "position_effect": first_leg.get('position_effect', ''),
-                    "option_type": first_leg.get('option_type', ''),
-                    "underlying_symbol": first_leg.get('underlying_symbol', 'UNKNOWN'),
-                    "strike_price": first_leg.get('strike_price', 0.0),
-                    "expiration_date": first_leg.get('expiration_date', ''),
-                })
-                
-                # Determine strategy for the order
-                strategy = self._determine_strategy(
-                    first_leg.get('underlying_symbol', 'UNKNOWN'),
-                    first_leg.get('option_type', ''),
-                    first_leg.get('side', ''),
-                    first_leg.get('position_effect', '')
-                )
-                order_info["strategy"] = strategy
+            # Extract first/primary leg data to top-level fields for querying
+            first_leg = legs[0]
+            order_info["leg_index"] = 0
+            order_info["leg_id"] = first_leg.get('id', '')
+            order_info["side"] = first_leg.get('side', '')
+            order_info["position_effect"] = first_leg.get('position_effect', '')
+            order_info["option_type"] = first_leg.get('option_type', '')
+            order_info["strike_price"] = float(first_leg.get('strike_price', 0)) if first_leg.get('strike_price') else None
+            order_info["expiration_date"] = first_leg.get('expiration_date', '')
+            order_info["long_strategy_code"] = first_leg.get('long_strategy_code', '')
+            order_info["short_strategy_code"] = first_leg.get('short_strategy_code', '')
         
         return order_info
     
@@ -899,11 +863,9 @@ class RobinhoodService:
             # Import here to avoid circular imports
             from app.services.options_pnl_background_service import pnl_background_service
             
-            # Try to get user_id - in a real implementation, this would come from auth
-            # For now, we'll use a dummy UUID or the first user we find
+            # user_id should always be provided from authentication
             if not user_id:
-                import uuid
-                user_id = uuid.uuid4()  # This should be replaced with actual user from auth
+                raise ValueError("user_id is required for P&L calculation")
             
             # Try to get cached data first
             cached_data = await pnl_background_service.get_cached_pnl(user_id)

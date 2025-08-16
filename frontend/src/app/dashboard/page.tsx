@@ -560,11 +560,11 @@ function OptionsTab({ options, greeks, formatCurrency, formatPercent, onToggleCh
               <div>
                 <div className="flex items-center space-x-2">
                   <SymbolLogo 
-                    symbol={position.underlying_symbol} 
+                    symbol={position.chain_symbol} 
                     size="md" 
                     showText={false}
                   />
-                  <span className="font-medium text-lg">{position.underlying_symbol}</span>
+                  <span className="font-medium text-lg">{position.chain_symbol}</span>
                   
                   {/* Chain Indicators */}
                   {showChains && position.chain_id && (
@@ -662,7 +662,6 @@ function OptionsTab({ options, greeks, formatCurrency, formatPercent, onToggleCh
       <OptionsHistorySection 
         formatCurrency={formatCurrency} 
         formatPercent={formatPercent} 
-        onChainClick={onChainClick}
       />
     </div>
   )
@@ -721,6 +720,8 @@ export default function Dashboard() {
         console.error('Auth check failed:', error)
         setIsAuthenticated(false)
         localStorage.removeItem('robinhood_authenticated')
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('user_info')
       } finally {
         setIsLoading(false)
       }
@@ -834,6 +835,8 @@ export default function Dashboard() {
       if (error instanceof ApiError && error.statusCode === 401) {
         // Authentication expired
         localStorage.removeItem('robinhood_authenticated')
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('user_info')
         setIsAuthenticated(false)
         router.push('/login')
       } else {
@@ -850,6 +853,8 @@ export default function Dashboard() {
 
   const handleDisconnect = () => {
     localStorage.removeItem('robinhood_authenticated')
+    localStorage.removeItem('auth_token')
+    localStorage.removeItem('user_info')
     setIsAuthenticated(false)
     setDashboardData({ portfolio: null, stocks: null, options: null, greeks: null })
     setError(null)

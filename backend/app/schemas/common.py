@@ -26,6 +26,13 @@ class ListResponse(BaseResponse):
     total: Optional[int] = Field(default=None)
     page: Optional[int] = Field(default=None)
     page_size: Optional[int] = Field(default=None)
+    # Enhanced pagination fields
+    limit: Optional[int] = Field(default=None)
+    total_pages: Optional[int] = Field(default=None)
+    has_next: Optional[bool] = Field(default=None)
+    has_prev: Optional[bool] = Field(default=None)
+    filters_applied: Optional[Dict[str, Any]] = Field(default=None)
+    data_source: Optional[str] = Field(default=None)
 
 
 class ErrorResponse(BaseResponse):

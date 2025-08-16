@@ -61,7 +61,13 @@
       "Bash(chmod:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git init:*)"
+      "Bash(git init:*)",
+      "Bash(PYTHONPATH:*)",
+      "Bash(npm test)",
+      "Bash(npx jest:*)",
+      "Bash(npm install:*)",
+      "Bash(npx playwright test:*)",
+      "Bash(npx playwright:*)"
     ],
     "deny": []
   }

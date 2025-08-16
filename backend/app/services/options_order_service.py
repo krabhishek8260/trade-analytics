@@ -8,12 +8,14 @@ to optimize rolled options analysis performance.
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
-from sqlalchemy import select, and_, desc, func
+from typing import Dict, List, Optional, Any, Callable
+from sqlalchemy import select, and_, desc, func, asc, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from uuid import UUID
 
 from app.core.database import get_db
+from app.core.redis import cache
 from app.models.options_order import OptionsOrder
 from app.models.user import User  # Import User model to resolve relationship
 from app.services.robinhood_service import RobinhoodService
@@ -26,12 +28,27 @@ class OptionsOrderService:
     
     def __init__(self, rh_service: RobinhoodService):
         self.rh_service = rh_service
+        self.progress_callbacks = {}
+    
+    def set_progress_callback(self, user_id: str, callback: Callable[[Dict[str, Any]], None]):
+        """Set a progress callback for a user's sync operation"""
+        self.progress_callbacks[user_id] = callback
+    
+    def _update_progress(self, user_id: str, progress_data: Dict[str, Any]):
+        """Update progress for a user if callback is set"""
+        callback = self.progress_callbacks.get(user_id)
+        if callback:
+            try:
+                callback(progress_data)
+            except Exception as e:
+                logger.warning(f"Progress callback error for user {user_id}: {str(e)}")
     
     async def sync_options_orders(
         self, 
         user_id: str, 
         force_full_sync: bool = False,
-        days_back: int = 30
+        days_back: int = 30,
+        progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None
     ) -> Dict[str, Any]:
         """
         Sync options orders from Robinhood to database with incremental updates
@@ -40,7 +57,17 @@ class OptionsOrderService:
             user_id: User ID to sync orders for
             force_full_sync: If True, fetch all orders regardless of last sync
             days_back: Days to look back for incremental sync
+            progress_callback: Optional callback to receive progress updates
         """
+        if progress_callback:
+            self.set_progress_callback(user_id, progress_callback)
+        
+        # Update progress: Starting sync
+        self._update_progress(user_id, {
+            "status": "starting",
+            "message": "Initializing options orders sync...",
+            "progress": 0
+        })
         try:
             async for db in get_db():
                 # Determine sync strategy
@@ -51,11 +78,22 @@ class OptionsOrderService:
                 # If no last sync or force full sync, go back specified days
                 if last_sync_time is None:
                     since_time = datetime.now() - timedelta(days=days_back)
+                    sync_type = "full"
                 else:
                     # Incremental sync: get orders since last sync minus 1 day buffer
                     since_time = last_sync_time - timedelta(days=1)
+                    sync_type = "incremental"
                 
-                logger.info(f"Syncing options orders since {since_time} for user {user_id}")
+                logger.info(f"Syncing options orders ({sync_type}) since {since_time} for user {user_id}")
+                
+                # Update progress: Fetching from API
+                self._update_progress(user_id, {
+                    "status": "fetching",
+                    "message": f"Fetching orders from Robinhood API ({sync_type} sync)...",
+                    "progress": 10,
+                    "sync_type": sync_type,
+                    "since_time": since_time.isoformat()
+                })
                 
                 # Fetch orders from Robinhood with smart limits
                 # Use smaller limit for initial sync to prevent timeouts
@@ -78,8 +116,28 @@ class OptionsOrderService:
                 
                 orders = orders_response["data"]
                 
-                # Process and store orders
-                stored_count = await self._store_orders(db, user_id, orders)
+                # Update progress: Processing orders
+                self._update_progress(user_id, {
+                    "status": "processing",
+                    "message": f"Processing {len(orders)} orders...",
+                    "progress": 30,
+                    "orders_fetched": len(orders)
+                })
+                
+                # Process and store orders with progress updates
+                stored_count = await self._store_orders_with_progress(db, user_id, orders)
+                
+                # Clear progress callback
+                if user_id in self.progress_callbacks:
+                    del self.progress_callbacks[user_id]
+                
+                # Update progress: Complete
+                self._update_progress(user_id, {
+                    "status": "complete",
+                    "message": f"Successfully synced {stored_count} orders",
+                    "progress": 100,
+                    "orders_stored": stored_count
+                })
                 
                 return {
                     "success": True,
@@ -88,12 +146,22 @@ class OptionsOrderService:
                         "orders_processed": len(orders),
                         "orders_stored": stored_count,
                         "sync_time": datetime.now().isoformat(),
-                        "since_time": since_time.isoformat()
+                        "since_time": since_time.isoformat(),
+                        "sync_type": sync_type
                     }
                 }
                 
         except Exception as e:
             logger.error(f"Error syncing options orders: {str(e)}", exc_info=True)
+            # Update progress: Error
+            self._update_progress(user_id, {
+                "status": "error",
+                "message": f"Sync failed: {str(e)}",
+                "progress": 0
+            })
+            # Clear progress callback
+            if user_id in self.progress_callbacks:
+                del self.progress_callbacks[user_id]
             return {
                 "success": False,
                 "message": f"Sync error: {str(e)}",
@@ -279,19 +347,30 @@ class OptionsOrderService:
         except Exception:
             return None
     
-    async def _store_orders(self, db: AsyncSession, user_id: str, orders: List[Dict[str, Any]]) -> int:
-        """Store or update orders in database using async batch processing"""
+    async def _store_orders_with_progress(self, db: AsyncSession, user_id: str, orders: List[Dict[str, Any]]) -> int:
+        """Store or update orders in database with progress updates"""
         if not orders:
             return 0
         
         # Process orders in batches for better performance
         batch_size = 50
         stored_count = 0
+        total_orders = len(orders)
         
         for i in range(0, len(orders), batch_size):
             batch = orders[i:i + batch_size]
             batch_count = await self._process_order_batch(db, user_id, batch)
             stored_count += batch_count
+            
+            # Update progress
+            progress = min(90, 30 + int((stored_count / total_orders) * 60))  # 30-90% range
+            self._update_progress(user_id, {
+                "status": "storing",
+                "message": f"Stored {stored_count} of {total_orders} orders...",
+                "progress": progress,
+                "orders_stored": stored_count,
+                "total_orders": total_orders
+            })
             
             # Commit each batch
             await db.commit()
@@ -302,13 +381,17 @@ class OptionsOrderService:
         
         return stored_count
     
+    async def _store_orders(self, db: AsyncSession, user_id: str, orders: List[Dict[str, Any]]) -> int:
+        """Store or update orders in database using async batch processing (legacy method)"""
+        return await self._store_orders_with_progress(db, user_id, orders)
+    
     async def _process_order_batch(self, db: AsyncSession, user_id: str, batch: List[Dict[str, Any]]) -> int:
         """Process a batch of orders asynchronously"""
         stored_count = 0
         
         for order_data in batch:
             try:
-                # Prepare order record
+                # Prepare order record using the correct field names from the model
                 order_record = {
                     "user_id": user_id,
                     "order_id": order_data.get("order_id", ""),
@@ -316,28 +399,25 @@ class OptionsOrderService:
                     "chain_symbol": order_data.get("chain_symbol", ""),
                     "closing_strategy": order_data.get("closing_strategy"),
                     "opening_strategy": order_data.get("opening_strategy"),
-                    "underlying_symbol": order_data.get("underlying_symbol", ""),
                     "strategy": order_data.get("strategy", ""),
                     "direction": order_data.get("direction", ""),
                     "state": order_data.get("state", ""),
                     "type": order_data.get("type", ""),
-                    "quantity": order_data.get("quantity", 0),
-                    "price": order_data.get("price"),
+                    "processed_quantity": order_data.get("quantity", 0),
                     "premium": order_data.get("premium"),
                     "processed_premium": order_data.get("processed_premium"),
-                    "processed_premium_direction": order_data.get("processed_premium_direction"),
                     "legs_count": order_data.get("legs_count", 0),
-                    "legs": order_data.get("legs_details"),
-                    "executions": order_data.get("executions"),
-                    "executions_count": order_data.get("executions_count", 0),
+                    "legs_details": order_data.get("legs_details", []),
+                    # Top-level leg fields (extract from first leg if available)
+                    "leg_index": 0 if order_data.get("legs_details") else None,
+                    "side": order_data.get("transaction_side"),
+                    "position_effect": order_data.get("position_effect"),
                     "option_type": order_data.get("option_type"),
                     "strike_price": order_data.get("strike_price"),
                     "expiration_date": order_data.get("expiration_date"),
-                    "transaction_side": order_data.get("transaction_side"),
-                    "position_effect": order_data.get("position_effect"),
-                    "raw_data": order_data,
-                    "order_created_at": self._parse_datetime(order_data.get("created_at")),
-                    "order_updated_at": self._parse_datetime(order_data.get("updated_at"))
+                    "created_at": self._parse_datetime(order_data.get("created_at")),
+                    "updated_at": self._parse_datetime(order_data.get("updated_at")),
+                    "raw_data": order_data
                 }
                 
                 # Use PostgreSQL upsert (ON CONFLICT DO UPDATE)
@@ -347,7 +427,7 @@ class OptionsOrderService:
                     set_={
                         key: insert_stmt.excluded[key] 
                         for key in order_record.keys() 
-                        if key not in ["id", "user_id", "order_id", "created_at"]
+                        if key not in ["id", "user_id", "order_id", "db_created_at"]
                     }
                 )
                 
@@ -358,7 +438,6 @@ class OptionsOrderService:
                 logger.error(f"Error storing order {order_data.get('order_id', 'unknown')}: {str(e)}")
                 continue
         
-        await db.commit()
         return stored_count
     
     async def _analyze_chain(self, orders: List[OptionsOrder]) -> Dict[str, Any]:
@@ -623,4 +702,175 @@ class OptionsOrderService:
                 "success": False,
                 "message": f"Demo data creation error: {str(e)}",
                 "data": None
+            }
+    
+    async def get_user_orders(
+        self,
+        user_id: UUID,
+        page: int = 1,
+        limit: int = 50,
+        symbol: Optional[str] = None,
+        state: Optional[str] = None,
+        strategy: Optional[str] = None,
+        sort_by: str = "created_at",
+        sort_order: str = "desc"
+    ) -> Dict[str, Any]:
+        """
+        Get paginated options orders for a user from database
+        
+        Args:
+            user_id: User UUID
+            page: Page number (1-based)
+            limit: Orders per page
+            symbol: Filter by underlying symbol
+            state: Filter by order state
+            strategy: Filter by strategy
+            sort_by: Field to sort by
+            sort_order: 'asc' or 'desc'
+        """
+        try:
+            async for db in get_db():
+                # Build base query conditions
+                conditions = [OptionsOrder.user_id == str(user_id)]
+                
+                # Add filters
+                if symbol:
+                    conditions.append(OptionsOrder.chain_symbol == symbol.upper())
+                if state:
+                    conditions.append(OptionsOrder.state == state)
+                if strategy:
+                    conditions.append(OptionsOrder.strategy.ilike(f"%{strategy}%"))
+                
+                # Build base query
+                base_query = select(OptionsOrder).where(and_(*conditions))
+                
+                # Add sorting
+                sort_column = getattr(OptionsOrder, sort_by, OptionsOrder.created_at)
+                if sort_order.lower() == "desc":
+                    base_query = base_query.order_by(desc(sort_column))
+                else:
+                    base_query = base_query.order_by(asc(sort_column))
+                
+                # Get total count
+                count_query = select(func.count()).select_from(
+                    select(OptionsOrder.id).where(and_(*conditions)).subquery()
+                )
+                total_result = await db.execute(count_query)
+                total_count = total_result.scalar() or 0
+                
+                # Apply pagination
+                offset = (page - 1) * limit
+                paginated_query = base_query.offset(offset).limit(limit)
+                
+                # Execute query
+                result = await db.execute(paginated_query)
+                orders = result.scalars().all()
+                
+                # Convert to dict format
+                orders_data = []
+                for order in orders:
+                    order_dict = {
+                        "order_id": order.order_id,
+                        "chain_symbol": order.chain_symbol,
+                        "underlying_symbol": order.chain_symbol,  # Use chain_symbol as underlying
+                        "state": order.state,
+                        "strategy": order.strategy,
+                        "direction": order.direction,
+                        "processed_premium": float(order.processed_premium or 0),
+                        "premium": float(order.premium or 0),
+                        "legs_count": order.legs_count or 0,
+                        "created_at": order.created_at.isoformat() if order.created_at else None,
+                        "updated_at": order.updated_at.isoformat() if order.updated_at else None,
+                        "option_type": order.option_type,
+                        "strike_price": float(order.strike_price or 0),
+                        "expiration_date": order.expiration_date,
+                        "transaction_side": order.side,
+                        "position_effect": order.position_effect,
+                        "type": order.type,
+                        "legs_details": order.legs_details or []
+                    }
+                    orders_data.append(order_dict)
+                
+                # Calculate pagination info
+                total_pages = (total_count + limit - 1) // limit
+                has_next = page < total_pages
+                has_prev = page > 1
+                
+                return {
+                    "success": True,
+                    "data": orders_data,
+                    "pagination": {
+                        "page": page,
+                        "limit": limit,
+                        "total": total_count,
+                        "total_pages": total_pages,
+                        "has_next": has_next,
+                        "has_prev": has_prev
+                    },
+                    "filters_applied": {
+                        "symbol": symbol,
+                        "state": state,
+                        "strategy": strategy,
+                        "sort_by": sort_by,
+                        "sort_order": sort_order
+                    }
+                }
+                
+        except Exception as e:
+            logger.error(f"Error getting user orders: {str(e)}", exc_info=True)
+            return {
+                "success": False,
+                "message": str(e),
+                "data": []
+            }
+    
+    async def get_sync_status(self, user_id: UUID) -> Dict[str, Any]:
+        """
+        Get sync status for a user
+        
+        Args:
+            user_id: User UUID
+        """
+        try:
+            async for db in get_db():
+                # Get order count and last sync time
+                stmt = select(
+                    func.count(OptionsOrder.id).label("total_orders"),
+                    func.max(OptionsOrder.created_at).label("last_sync"),
+                    func.max(OptionsOrder.created_at).label("last_order_date")
+                ).where(OptionsOrder.user_id == str(user_id))
+                
+                result = await db.execute(stmt)
+                stats = result.first()
+                
+                # Check if sync is needed (no orders or old data)
+                needs_sync = False
+                if not stats.total_orders:
+                    needs_sync = True
+                    sync_reason = "No orders found - full sync needed"
+                elif stats.last_sync and stats.last_sync < datetime.now() - timedelta(hours=1):
+                    needs_sync = True
+                    sync_reason = "Data is stale - incremental sync recommended"
+                else:
+                    sync_reason = "Data is current"
+                
+                return {
+                    "success": True,
+                    "data": {
+                        "user_id": str(user_id),
+                        "total_orders": stats.total_orders or 0,
+                        "last_sync": stats.last_sync.isoformat() if stats.last_sync else None,
+                        "last_order_date": stats.last_order_date.isoformat() if stats.last_order_date else None,
+                        "needs_sync": needs_sync,
+                        "sync_reason": sync_reason,
+                        "sync_status": "up_to_date" if not needs_sync else "sync_needed"
+                    }
+                }
+                
+        except Exception as e:
+            logger.error(f"Error getting sync status: {str(e)}", exc_info=True)
+            return {
+                "success": False,
+                "message": str(e),
+                "data": {}
             }

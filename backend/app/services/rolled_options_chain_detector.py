@@ -153,6 +153,7 @@ class RolledOptionsChainDetector:
             # First, find orders that indicate rolling activity
             roll_orders = []
             opening_orders = []
+            closing_orders = []
             strategies = set()
             form_source_count = 0
             position_effect_count = 0
@@ -176,10 +177,14 @@ class RolledOptionsChainDetector:
                       len(order.get('legs', [])) == 1):
                     # Single-leg opening orders that could start chains
                     opening_orders.append(order)
+                elif (order.get('closing_strategy') and 
+                      len(order.get('legs', [])) == 1):
+                    # Single-leg closing orders that could end chains
+                    closing_orders.append(order)
             
             # Log unique strategies for debugging
             logger.info(f"Found strategies: {sorted(list(strategies))[:10]}")  # First 10 unique strategies
-            logger.info(f"Found {len(roll_orders)} roll orders and {len(opening_orders)} potential chain starts")
+            logger.info(f"Found {len(roll_orders)} roll orders, {len(opening_orders)} potential chain starts, {len(closing_orders)} potential chain ends")
             logger.info(f"Multi-criteria roll detection: {len(roll_orders)} total ({form_source_count} form_source, {position_effect_count} position_effects)")
             
             if not roll_orders:
@@ -189,6 +194,7 @@ class RolledOptionsChainDetector:
             # Group roll orders by symbol and type for faster processing
             roll_groups = self._group_orders_by_symbol(roll_orders)
             opening_groups = self._group_orders_by_symbol(opening_orders)
+            closing_groups = self._group_orders_by_symbol(closing_orders)
             
             all_chains = []
             
@@ -196,9 +202,10 @@ class RolledOptionsChainDetector:
             for group_key in roll_groups.keys():
                 symbol_type_roll_orders = roll_groups[group_key]
                 symbol_type_opening_orders = opening_groups.get(group_key, [])
+                symbol_type_closing_orders = closing_groups.get(group_key, [])
                 
                 # Combine orders for this symbol+type and sort by time
-                group_orders = symbol_type_roll_orders + symbol_type_opening_orders
+                group_orders = symbol_type_roll_orders + symbol_type_opening_orders + symbol_type_closing_orders
                 group_orders.sort(key=lambda x: x.get('created_at', ''))
                 
                 chains = self._build_chains_from_roll_activity(group_key, group_orders)

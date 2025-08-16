@@ -10,6 +10,7 @@ import logging
 
 from app.services.robinhood_service import RobinhoodService
 from app.services.options_pnl_service import OptionsPnLService
+from app.services.options_order_service import OptionsOrderService
 from app.schemas.common import DataResponse, ErrorResponse, ListResponse
 from app.schemas.options import OptionsSummary
 from app.core.security import get_current_user_id, ensure_demo_user_exists
@@ -107,7 +108,6 @@ async def get_options_positions(
 
 @router.get(
     "/orders",
-    response_model=ListResponse,
     responses={
         200: {"description": "Options orders retrieved successfully"},
         401: {"description": "Unauthorized", "model": ErrorResponse},
@@ -115,58 +115,242 @@ async def get_options_positions(
     }
 )
 async def get_options_orders(
-    limit: int = Query(50, ge=1, le=500, description="Number of orders to retrieve"),
-    days_back: Optional[int] = Query(None, description="Get orders from N days back"),
+    page: int = Query(1, ge=1, description="Page number (1-based)"),
+    limit: int = Query(50, ge=1, le=500, description="Number of orders per page"),
     underlying_symbol: Optional[str] = Query(None, description="Filter by underlying symbol"),
     state: Optional[str] = Query(None, description="Filter by order state"),
     strategy: Optional[str] = Query(None, description="Filter by strategy"),
     option_type: Optional[str] = Query(None, regex="^(call|put)$", description="Filter by option type (call/put)"),
-    transaction_side: Optional[str] = Query(None, regex="^(buy|sell)$", description="Filter by transaction side (buy/sell)"),
+    sort_by: str = Query("created_at", description="Field to sort by"),
+    sort_order: str = Query("desc", regex="^(asc|desc)$", description="Sort order"),
+    current_user_id: UUID = Depends(get_current_user_id),
+    db = Depends(get_db),
     rh_service: RobinhoodService = Depends(get_robinhood_service)
 ):
-    """Get options orders with legs and executions"""
+    """Get paginated options orders from database with fallback to API"""
     try:
-        # Calculate since_time if days_back is provided
-        since_time = None
-        if days_back is not None:
-            since_time = datetime.now() - timedelta(days=days_back)
+        # Ensure demo user exists for development/testing
+        await ensure_demo_user_exists(db)
         
-        result = await rh_service.get_options_orders(limit=limit, since_time=since_time)
+        # Initialize OptionsOrderService
+        options_service = OptionsOrderService(rh_service)
+        
+        # First, try to get orders from database
+        db_result = await options_service.get_user_orders(
+            user_id=current_user_id,
+            page=page,
+            limit=limit,
+            symbol=underlying_symbol,
+            state=state,
+            strategy=strategy,
+            sort_by=sort_by,
+            sort_order=sort_order
+        )
+        
+        if db_result["success"] and db_result["data"]:
+            # Return database results in the format frontend expects
+            return {
+                "data": db_result["data"],
+                "pagination": {
+                    "page": db_result["pagination"]["page"],
+                    "limit": db_result["pagination"]["limit"],
+                    "total": db_result["pagination"]["total"],
+                    "total_pages": db_result["pagination"]["total_pages"],
+                    "has_next": db_result["pagination"]["has_next"],
+                    "has_prev": db_result["pagination"]["has_prev"]
+                },
+                "filters_applied": db_result["filters_applied"],
+                "data_source": "database"
+            }
+        
+        # Fallback to API if database is empty (new user or no sync yet)
+        logger.info(f"Database query returned no results, falling back to API for user {current_user_id}")
+        
+        # Calculate since_time for API call (limit to reasonable timeframe)
+        since_time = datetime.now() - timedelta(days=90)  # Last 90 days
+        
+        result = await rh_service.get_options_orders(limit=min(limit * 2, 1000), since_time=since_time)
         
         if not result.get("success", False):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=result.get("message", "Failed to fetch options orders")
+                detail=result.get("message", "Failed to fetch options orders from API")
             )
         
-        orders = result["data"]
+        orders = result["data"] or []
         
-        # Apply filters
+        # Apply filters to API results
+        filtered_orders = orders
         if underlying_symbol:
-            orders = [order for order in orders if order.get("underlying_symbol", "").upper() == underlying_symbol.upper()]
+            filtered_orders = [
+                order for order in filtered_orders 
+                if order.get("underlying_symbol", "").upper() == underlying_symbol.upper()
+            ]
         
         if state:
-            orders = [order for order in orders if order.get("state", "").lower() == state.lower()]
+            filtered_orders = [
+                order for order in filtered_orders 
+                if order.get("state", "").lower() == state.lower()
+            ]
         
         if strategy:
-            orders = [order for order in orders if strategy.upper() in order.get("strategy", "").upper()]
+            filtered_orders = [
+                order for order in filtered_orders 
+                if strategy.upper() in order.get("strategy", "").upper()
+            ]
         
         if option_type:
-            orders = [order for order in orders if order.get("option_type", "").lower() == option_type.lower()]
+            filtered_orders = [
+                order for order in filtered_orders 
+                if order.get("option_type", "").lower() == option_type.lower()
+            ]
         
-        if transaction_side:
-            orders = [order for order in orders if order.get("transaction_side", "").lower() == transaction_side.lower()]
+        # Sort results
+        if sort_by == "created_at":
+            reverse = sort_order.lower() == "desc"
+            filtered_orders.sort(
+                key=lambda x: x.get("created_at", ""), 
+                reverse=reverse
+            )
         
-        return ListResponse(
-            data=orders,
-            count=len(orders),
-            total=len(orders)
-        )
+        # Apply pagination to API results
+        start_idx = (page - 1) * limit
+        end_idx = start_idx + limit
+        paginated_orders = filtered_orders[start_idx:end_idx]
+        
+        total_count = len(filtered_orders)
+        total_pages = (total_count + limit - 1) // limit
+        
+        return {
+            "data": paginated_orders,
+            "pagination": {
+                "page": page,
+                "limit": limit,
+                "total": total_count,
+                "total_pages": total_pages,
+                "has_next": page < total_pages,
+                "has_prev": page > 1
+            },
+            "filters_applied": {
+                "symbol": underlying_symbol,
+                "state": state,
+                "strategy": strategy,
+                "option_type": option_type,
+                "sort_by": sort_by,
+                "sort_order": sort_order
+            },
+            "data_source": "api_fallback"
+        }
         
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error fetching options orders: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+
+
+@router.get(
+    "/orders/sync-status",
+    response_model=DataResponse,
+    responses={
+        200: {"description": "Sync status retrieved successfully"},
+        401: {"description": "Unauthorized", "model": ErrorResponse},
+        500: {"description": "Internal server error", "model": ErrorResponse}
+    }
+)
+async def get_orders_sync_status(
+    current_user_id: UUID = Depends(get_current_user_id),
+    db = Depends(get_db),
+    rh_service: RobinhoodService = Depends(get_robinhood_service)
+):
+    """Get options orders sync status for current user"""
+    try:
+        # Ensure demo user exists for development/testing
+        await ensure_demo_user_exists(db)
+        
+        # Initialize OptionsOrderService
+        options_service = OptionsOrderService(rh_service)
+        
+        # Get sync status
+        try:
+            result = await options_service.get_sync_status(current_user_id)
+            
+            if result["success"]:
+                return DataResponse(data=result["data"])
+            else:
+                # Return default sync status instead of erroring
+                return DataResponse(data={
+                    "sync_status": "unknown",
+                    "last_sync": None,
+                    "total_orders": 0,
+                    "message": "Sync status unavailable"
+                })
+        except Exception as sync_error:
+            logger.warning(f"Sync status error: {sync_error}")
+            # Return default sync status instead of erroring
+            return DataResponse(data={
+                "sync_status": "unknown", 
+                "last_sync": None,
+                "total_orders": 0,
+                "message": "Sync status unavailable"
+            })
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting sync status: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+
+
+@router.post(
+    "/orders/sync",
+    response_model=DataResponse,
+    responses={
+        200: {"description": "Sync triggered successfully"},
+        401: {"description": "Unauthorized", "model": ErrorResponse},
+        500: {"description": "Internal server error", "model": ErrorResponse}
+    }
+)
+async def trigger_orders_sync(
+    force_full_sync: bool = Query(False, description="Force full sync instead of incremental"),
+    days_back: int = Query(30, ge=1, le=365, description="Days to sync back for full sync"),
+    current_user_id: UUID = Depends(get_current_user_id),
+    db = Depends(get_db),
+    rh_service: RobinhoodService = Depends(get_robinhood_service)
+):
+    """Manually trigger options orders sync for current user"""
+    try:
+        # Ensure demo user exists for development/testing
+        await ensure_demo_user_exists(db)
+        
+        # Initialize OptionsOrderService
+        options_service = OptionsOrderService(rh_service)
+        
+        # Trigger sync
+        result = await options_service.sync_options_orders(
+            user_id=str(current_user_id),
+            force_full_sync=force_full_sync,
+            days_back=days_back
+        )
+        
+        if result["success"]:
+            return DataResponse(data=result["data"])
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.get("message", "Sync failed")
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error triggering sync: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error"
@@ -234,13 +418,14 @@ async def get_options_order(
 )
 async def get_options_summary(
     include_chains: bool = Query(False, description="Include rolled options chain information for positions"),
+    current_user_id: UUID = Depends(get_current_user_id),
     rh_service: RobinhoodService = Depends(get_robinhood_service),
     db = Depends(get_db)
 ):
     """Get comprehensive options portfolio summary with enhanced P&L analytics"""
     try:
         # Get enhanced P&L summary
-        pnl_result = await rh_service.calculate_options_pnl_summary()
+        pnl_result = await rh_service.calculate_options_pnl_summary(str(current_user_id))
         if not pnl_result.get("success", False):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

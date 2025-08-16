@@ -35,8 +35,14 @@ export default function LoginPage() {
       const data = await response.json()
 
       if (response.ok && data.success) {
-        // Store authentication status in localStorage
+        // Store authentication status and JWT token in localStorage
         localStorage.setItem('robinhood_authenticated', 'true')
+        if (data.access_token) {
+          localStorage.setItem('auth_token', data.access_token)
+        }
+        if (data.user_info) {
+          localStorage.setItem('user_info', JSON.stringify(data.user_info))
+        }
         router.push('/dashboard')
       } else {
         let errorMessage = data.message || 'Login failed'

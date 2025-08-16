@@ -359,12 +359,12 @@ export function BreakdownModal({
                                     <div className="font-medium">
                                       <div className="flex items-center gap-2">
                                         <SymbolLogo 
-                                          symbol={position.underlying_symbol} 
+                                          symbol={position.chain_symbol} 
                                           size="sm" 
                                           showText={false}
                                         />
                                         <span>
-                                          {position.underlying_symbol} {position.option_type?.toUpperCase()} 
+                                          {position.chain_symbol} {position.option_type?.toUpperCase()} 
                                           ${position.strike_price} {position.expiration_date}
                                         </span>
                                       </div>

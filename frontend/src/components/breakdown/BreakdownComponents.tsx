@@ -127,12 +127,12 @@ export function BreakdownComponents({
                           <div className="flex-1">
                             <div className="flex items-center space-x-2">
                               <SymbolLogo 
-                                symbol={position.underlying_symbol} 
+                                symbol={position.chain_symbol} 
                                 size="sm" 
                                 showText={false}
                               />
                               <span className="font-medium">
-                                {position.underlying_symbol}
+                                {position.chain_symbol}
                               </span>
                               {position.option_type && (
                                 <>

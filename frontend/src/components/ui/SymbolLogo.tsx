@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 
 interface SymbolLogoProps {
-  symbol: string
+  symbol?: string | null
   size?: 'sm' | 'md' | 'lg'
   showText?: boolean
   className?: string
@@ -30,6 +30,26 @@ export function SymbolLogo({
 }: SymbolLogoProps) {
   const [imageLoaded, setImageLoaded] = useState(false)
   const [imageError, setImageError] = useState(false)
+
+  // Handle undefined/null symbol
+  if (!symbol || typeof symbol !== 'string') {
+    return (
+      <div className="flex items-center gap-2">
+        <div className={cn(
+          'bg-gray-100 text-gray-400 rounded flex items-center justify-center font-semibold border border-gray-200',
+          sizeClasses[size],
+          textSizeClasses[size]
+        )}>
+          ?
+        </div>
+        {showText && (
+          <span className={cn('font-medium text-gray-400', textSizeClasses[size], className)}>
+            Unknown
+          </span>
+        )}
+      </div>
+    )
+  }
 
   // Simple direct URL generation without complex logic
   const getLogoUrl = (symbol: string): string => {

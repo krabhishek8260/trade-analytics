@@ -1,50 +1,184 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { getRolledOptionsChains, OptionsChain } from '@/lib/api'
+import { useState, useEffect, useCallback } from 'react'
+import { 
+  getOptionsOrders, 
+  getOptionsOrdersSyncStatus, 
+  triggerOptionsOrdersSync,
+  PaginatedOptionsOrdersResponse, 
+  HistoricalOptionsOrder,
+  OptionsOrdersSyncStatus 
+} from '@/lib/api'
+import { 
+  OptionsOrdersList, 
+  SyncStatusIndicator, 
+  SyncProgressIndicator 
+} from './options'
+import { SymbolLogo } from '@/components/ui/SymbolLogo'
 
 interface OptionsHistorySectionProps {
   formatCurrency: (value: number) => string
   formatPercent: (value: number) => string
-  onChainClick?: (chainId: string) => void
+}
+
+interface ExpandedOrderState {
+  [orderId: string]: boolean
 }
 
 export default function OptionsHistorySection({ 
   formatCurrency, 
-  formatPercent, 
-  onChainClick 
+  formatPercent
 }: OptionsHistorySectionProps) {
-  const [closedChains, setClosedChains] = useState<OptionsChain[]>([])
+  console.log('OptionsHistorySection: Component mounted')
+  console.log('OptionsHistorySection: props received', { formatCurrency: !!formatCurrency, formatPercent: !!formatPercent })
+  
+  // Core data state
+  const [ordersData, setOrdersData] = useState<PaginatedOptionsOrdersResponse | null>(null)
+  const [syncStatus, setSyncStatus] = useState<OptionsOrdersSyncStatus | null>(null)
   const [loading, setLoading] = useState(true)
+  
+  console.log('OptionsHistorySection: Every render - current state:', { 
+    loading, 
+    hasOrdersData: !!ordersData,
+    ordersDataKeys: ordersData ? Object.keys(ordersData) : null
+  })
+  const [syncing, setSyncing] = useState(false)
+  const [showProgress, setShowProgress] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [historyExpanded, setHistoryExpanded] = useState(false)
-  const [showChainInfo, setShowChainInfo] = useState(true)
+  
+  // UI state - always expanded, no collapsed view
+  const [historyExpanded] = useState(true) // Always expanded
+  const [expandedOrders, setExpandedOrders] = useState<ExpandedOrderState>({})
+  const [currentPage, setCurrentPage] = useState(1)
+  
+  // Filters
+  const [filters, setFilters] = useState({
+    symbol: '',
+    state: 'filled', // Still filter to filled orders in API, just don't show the badge
+    strategy: '',
+    sort_by: 'created_at',
+    sort_order: 'desc'
+  })
+  
+  console.log('OptionsHistorySection: State initialized', { 
+    currentPage, 
+    filters, 
+    loading, 
+    ordersData: ordersData,
+    ordersDataType: typeof ordersData,
+    ordersDataLength: ordersData?.data?.length
+  })
 
-  useEffect(() => {
-    const fetchClosedHistory = async () => {
+  const fetchOrdersData = useCallback(async (page = 1) => {
+    try {
+      console.log('OptionsHistorySection: fetchOrdersData called', { page, filters })
+      setLoading(true)
+      setError(null)
+      
+      const [ordersResponse, statusResponse] = await Promise.all([
+        getOptionsOrders({
+          page,
+          limit: 20,
+          underlying_symbol: filters.symbol || undefined,
+          state: filters.state || undefined,
+          strategy: filters.strategy || undefined,
+          sort_by: filters.sort_by,
+          sort_order: filters.sort_order
+        }),
+        getOptionsOrdersSyncStatus().catch(() => null) // Don't fail if sync status unavailable
+      ])
+      
+      console.log('OptionsHistorySection: API response received', { 
+        ordersCount: ordersResponse?.data?.length || 0, 
+        total: ordersResponse?.pagination?.total || 0,
+        hasData: !!ordersResponse?.data,
+        fullResponse: ordersResponse
+      })
+      setOrdersData(ordersResponse)
+      if (statusResponse) {
+        setSyncStatus(statusResponse)
+      }
+    } catch (err) {
+      console.error('Error loading options orders:', err)
+      setError(err instanceof Error ? err.message : 'Failed to fetch options orders')
+    } finally {
+      setLoading(false)
+    }
+  }, [filters])
+
+  // Auto-load data on mount using a different approach since useEffect is broken
+  const [autoLoaded, setAutoLoaded] = useState(false)
+  
+  console.log('OptionsHistorySection: Auto-load check', { autoLoaded, loading })
+  
+  if (!autoLoaded) {
+    console.log('OptionsHistorySection: Triggering auto-load')
+    setAutoLoaded(true)
+    // Trigger the same logic as manual load button
+    const autoLoad = async () => {
       try {
+        console.log('OptionsHistorySection: Auto-load starting...')
         setLoading(true)
-        setError(null)
-        
-        const response = await getRolledOptionsChains({
-          status: 'closed',
-          limit: 100,
-          days_back: 365
-        })
-        
-        setClosedChains(response.chains || [])
-      } catch (err) {
-        console.error('Error loading closed options history:', err)
-        setError(err instanceof Error ? err.message : 'Failed to fetch closed options history')
-      } finally {
+        const response = await fetch('/api/backend/options/orders?page=1&limit=20&state=filled&sort_by=created_at&sort_order=desc')
+        const data = await response.json()
+        console.log('OptionsHistorySection: Auto-load API response:', data)
+        setOrdersData(data)
+        setLoading(false)
+      } catch (error) {
+        console.error('OptionsHistorySection: Auto-load error:', error)
+        setError('Failed to load options orders')
         setLoading(false)
       }
     }
+    autoLoad()
+  }
 
-    fetchClosedHistory()
-  }, [])
+  const handleSync = async (forceFullSync = false) => {
+    try {
+      setSyncing(true)
+      setShowProgress(true)
+      setError(null)
+      
+      await triggerOptionsOrdersSync(forceFullSync, forceFullSync ? 365 : 30)
+      
+      // Note: Progress indicator will handle completion and data refresh
+      
+    } catch (err) {
+      console.error('Error triggering sync:', err)
+      setError(err instanceof Error ? err.message : 'Failed to sync orders')
+      setSyncing(false)
+      setShowProgress(false)
+    }
+  }
 
-  if (loading) {
+  const handleSyncComplete = () => {
+    setSyncing(false)
+    setShowProgress(false)
+    fetchOrdersData(currentPage)
+  }
+
+  const toggleOrderExpansion = (orderId: string) => {
+    setExpandedOrders(prev => ({
+      ...prev,
+      [orderId]: !prev[orderId]
+    }))
+  }
+
+  const handleFilterChange = (key: string, value: string) => {
+    setFilters(prev => ({ ...prev, [key]: value }))
+    setCurrentPage(1) // Reset to first page when filtering
+  }
+
+  const formatDateTime = (dateStr: string | null) => {
+    if (!dateStr) return 'N/A'
+    try {
+      return new Date(dateStr).toLocaleString()
+    } catch {
+      return dateStr
+    }
+  }
+
+  if (loading && !ordersData) {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between mb-3">
@@ -60,246 +194,241 @@ export default function OptionsHistorySection({
     )
   }
 
-  if (error) {
+  if (error && !ordersData) {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-medium">Options History</h3>
+          <button
+            onClick={() => handleSync(true)}
+            disabled={syncing}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
+          >
+            {syncing ? 'Syncing...' : 'Sync Orders'}
+          </button>
         </div>
         <div className="text-center py-8">
-          <p className="text-red-600 mb-2">Error loading closed options history</p>
+          <p className="text-red-600 mb-2">Error loading options orders</p>
           <p className="text-sm text-muted-foreground">{error}</p>
         </div>
       </div>
     )
   }
 
-  if (closedChains.length === 0) {
+  const orders = ordersData?.data || []
+  const pagination = ordersData?.pagination || { total: 0, page: 1, total_pages: 1, has_next: false, has_prev: false }
+  
+  console.log('OptionsHistorySection: Rendering logic', {
+    ordersLength: orders.length,
+    paginationTotal: pagination.total,
+    syncing,
+    willShowNoOrders: orders.length === 0 && !syncing,
+    willShowMain: !(orders.length === 0 && !syncing),
+    ordersDataStructure: ordersData ? Object.keys(ordersData) : null,
+    paginationStructure: ordersData?.pagination ? Object.keys(ordersData.pagination) : null,
+    rawPagination: ordersData?.pagination
+  })
+
+  if (orders.length === 0 && !syncing) {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-medium">Options History</h3>
+          <button
+            onClick={() => handleSync(true)}
+            disabled={syncing}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
+          >
+            Sync Orders
+          </button>
         </div>
         <div className="text-center py-8">
-          <p className="text-muted-foreground mb-4">No closed options positions found.</p>
-          <p className="text-sm text-muted-foreground">Closed options positions will appear here when available.</p>
+          <p className="text-muted-foreground mb-4">No options orders found.</p>
+          <p className="text-sm text-muted-foreground">
+            {syncStatus?.sync_status === 'sync_needed' 
+              ? 'Click "Sync Orders" to load your trading history.'
+              : 'Your options orders will appear here when available.'
+            }
+          </p>
         </div>
       </div>
     )
   }
 
-  // Calculate summary statistics
-  const totalClosed = closedChains.length
-  const totalPnl = closedChains.reduce((sum, chain) => sum + (chain.total_pnl || 0), 0)
-  const winningTrades = closedChains.filter(chain => (chain.total_pnl || 0) > 0).length
-  const winRate = totalClosed > 0 ? (winningTrades / totalClosed) * 100 : 0
-  const avgDaysHeld = closedChains.reduce((sum, chain) => {
-    if (chain.start_date && chain.last_activity_date) {
-      const start = new Date(chain.start_date)
-      const end = new Date(chain.last_activity_date)
-      return sum + Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
-    }
-    return sum
-  }, 0) / totalClosed
-  const enhancedChains = closedChains.filter(chain => chain.orders?.[0]?.legs?.length === 1).length
-  const chainsWithRolls = closedChains.filter(chain => (chain.roll_count || 0) > 0).length
-
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between mb-3">
-        <button
-          onClick={() => setHistoryExpanded(!historyExpanded)}
-          className="flex items-center space-x-2 p-4 bg-muted/50 rounded-lg hover:bg-muted transition-colors flex-1 mr-3"
-        >
-          <h3 className="text-lg font-medium">
-            Options History ({totalClosed} closed positions)
+      {/* Header with sync controls */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex-1">
+          <h3 className="text-xl font-semibold text-foreground">
+            Options History
           </h3>
-          <svg
-            className={`w-5 h-5 transition-transform ${historyExpanded ? 'rotate-180' : ''}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m19 9-7 7-7-7" />
-          </svg>
-        </button>
-        
-        {/* Chain Information Toggle */}
-        <div className="flex items-center space-x-2 bg-muted/50 rounded-lg p-3">
-          <label className="text-sm font-medium text-muted-foreground">Show Chain Info</label>
-          <button
-            onClick={() => setShowChainInfo(!showChainInfo)}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              showChainInfo ? 'bg-primary' : 'bg-input'
-            }`}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-background transition-transform ${
-                showChainInfo ? 'translate-x-6' : 'translate-x-1'
-              }`}
-            />
-          </button>
-        </div>
-      </div>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
-        <div className="bg-muted/50 rounded-lg p-4">
-          <h4 className="text-sm font-medium text-muted-foreground mb-1">Total P&L</h4>
-          <p className={`text-2xl font-bold ${totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-            {formatCurrency(totalPnl)}
+          <p className="text-sm text-muted-foreground mt-1">
+            {pagination.total} total orders • Page {currentPage} of {pagination.total_pages}
           </p>
         </div>
-        <div className="bg-muted/50 rounded-lg p-4">
-          <h4 className="text-sm font-medium text-muted-foreground mb-1">Win Rate</h4>
-          <p className="text-2xl font-bold">{formatPercent(winRate)}</p>
-          <p className="text-sm text-muted-foreground">{winningTrades}/{totalClosed} wins</p>
-        </div>
-        <div className="bg-muted/50 rounded-lg p-4">
-          <h4 className="text-sm font-medium text-muted-foreground mb-1">Avg Days Held</h4>
-          <p className="text-2xl font-bold">{Math.round(avgDaysHeld)}</p>
-          <p className="text-sm text-muted-foreground">days</p>
-        </div>
-        <div className="bg-muted/50 rounded-lg p-4">
-          <h4 className="text-sm font-medium text-muted-foreground mb-1">Enhanced Chains</h4>
-          <p className="text-2xl font-bold">{enhancedChains}</p>
-          <p className="text-sm text-muted-foreground">of {totalClosed} total</p>
-        </div>
-        <div className="bg-muted/50 rounded-lg p-4">
-          <h4 className="text-sm font-medium text-muted-foreground mb-1">Rolled Chains</h4>
-          <p className="text-2xl font-bold">{chainsWithRolls}</p>
-          <p className="text-sm text-muted-foreground">with rolls</p>
+        
+        {/* Sync controls */}
+        <div className="flex items-center space-x-2">
+          <SyncStatusIndicator />
+          <button
+            onClick={async () => {
+              console.log('OptionsHistorySection: Refresh button clicked')
+              try {
+                setLoading(true)
+                setError(null)
+                const response = await fetch(`/api/backend/options/orders?page=${currentPage}&limit=20&state=filled&sort_by=created_at&sort_order=desc`)
+                const data = await response.json()
+                console.log('OptionsHistorySection: Refresh API response:', data)
+                setOrdersData(data)
+                setLoading(false)
+              } catch (error) {
+                console.error('OptionsHistorySection: Refresh error:', error)
+                setError('Failed to refresh options orders')
+                setLoading(false)
+              }
+            }}
+            disabled={loading}
+            className="px-3 py-2 text-sm bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 disabled:opacity-50"
+          >
+            {loading ? 'Loading...' : 'Refresh'}
+          </button>
+          <button
+            onClick={() => handleSync(true)}
+            disabled={syncing}
+            className="px-3 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
+          >
+            Full Sync
+          </button>
         </div>
       </div>
 
-      {/* Closed Chains List */}
-      <div className="space-y-2">
-        {(historyExpanded ? closedChains : closedChains.slice(0, 5)).map((chain, index) => {
-          const lastOrder = chain.orders?.[chain.orders.length - 1]
-          const firstOrder = chain.orders?.[0]
-          const isEnhanced = firstOrder?.legs?.length === 1
-          const daysHeld = chain.start_date && chain.last_activity_date ? 
-            Math.floor((new Date(chain.last_activity_date).getTime() - new Date(chain.start_date).getTime()) / (1000 * 60 * 60 * 24)) : 0
-          
-          return (
-            <div 
-              key={chain.chain_id || index} 
-              className="flex justify-between items-center p-4 bg-muted/50 rounded-lg"
-            >
-              <div className="flex-1">
-                <div className="flex items-center space-x-2 mb-2">
-                  <span className="font-medium text-lg">{chain.underlying_symbol}</span>
-                  
-                  {/* Chain Indicators */}
-                  {showChainInfo && chain.chain_id && (
-                    <>
-                      <button
-                        onClick={() => onChainClick?.(chain.chain_id)}
-                        className="text-xs px-2 py-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors cursor-pointer"
-                        title="Click to view chain details"
-                      >
-                        🔗 CHAIN
-                      </button>
-                      {(chain.roll_count || 0) > 0 && (
-                        <span className="text-xs px-2 py-1 rounded bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 border border-orange-300 dark:border-orange-700">
-                          🔄 {chain.roll_count} ROLLS
-                        </span>
-                      )}
-                      {isEnhanced && (
-                        <span className="text-xs px-2 py-1 rounded bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 border border-purple-300 dark:border-purple-700" title="Enhanced chain with complete trading history">
-                          ✨ ENHANCED
-                        </span>
-                      )}
-                    </>
-                  )}
-                  
-                  <span className={`text-xs px-2 py-1 rounded ${
-                    (chain.total_pnl || 0) > 0
-                      ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 border border-green-300 dark:border-green-700' 
-                      : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 border border-red-300 dark:border-red-700'
-                  }`}>
-                    {(chain.total_pnl || 0) > 0 ? 'WIN' : 'LOSS'}
-                  </span>
-                </div>
-                
-                <div className="text-sm text-muted-foreground mb-2">
-                  <span className="font-medium">{chain.initial_strategy}</span>
-                  {lastOrder && (
-                    <span> • Final: {lastOrder.strike_price} {lastOrder.option_type?.toUpperCase()}</span>
-                  )}
-                  {daysHeld > 0 && (
-                    <span> • Held: {daysHeld} days</span>
-                  )}
-                  <span> • {new Date(chain.last_activity_date).toLocaleDateString()}</span>
-                </div>
+      {/* Filters */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 p-4 bg-gradient-to-r from-muted/20 to-muted/30 rounded-xl border border-muted/40">
+        <input
+          type="text"
+          placeholder="🔍 Symbol (e.g., AAPL)"
+          value={filters.symbol}
+          onChange={(e) => handleFilterChange('symbol', e.target.value)}
+          className="px-4 py-2 border-2 border-muted/40 rounded-lg focus:border-primary/50 focus:ring-2 focus:ring-primary/20 transition-all"
+        />
+        <select
+          value={filters.strategy}
+          onChange={(e) => handleFilterChange('strategy', e.target.value)}
+          className="px-4 py-2 border-2 border-muted/40 rounded-lg focus:border-primary/50 focus:ring-2 focus:ring-primary/20 transition-all"
+        >
+          <option value="">📊 All Strategies</option>
+          <option value="covered_call">Covered Call</option>
+          <option value="cash_secured_put">Cash Secured Put</option>
+          <option value="iron_condor">Iron Condor</option>
+          <option value="straddle">Straddle</option>
+        </select>
+        <input
+          type="date"
+          placeholder="📅 Date Range"
+          className="px-4 py-2 border-2 border-muted/40 rounded-lg focus:border-primary/50 focus:ring-2 focus:ring-primary/20 transition-all"
+        />
+        <select
+          value={`${filters.sort_by}_${filters.sort_order}`}
+          onChange={(e) => {
+            const [sortBy, sortOrder] = e.target.value.split('_')
+            setFilters(prev => ({ ...prev, sort_by: sortBy, sort_order: sortOrder }))
+            setCurrentPage(1)
+          }}
+          className="px-4 py-2 border-2 border-muted/40 rounded-lg focus:border-primary/50 focus:ring-2 focus:ring-primary/20 transition-all"
+        >
+          <option value="created_at_desc">⬇️ Newest First</option>
+          <option value="created_at_asc">⬆️ Oldest First</option>
+          <option value="processed_premium_desc">💰 Highest Premium</option>
+          <option value="processed_premium_asc">💸 Lowest Premium</option>
+        </select>
+      </div>
 
-                {/* Enhanced Chain Information */}
-                {showChainInfo && chain.chain_id && (
-                  <div className="mt-2 p-3 bg-muted/30 rounded border border-border">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-muted-foreground">
-                      <div className="flex items-center space-x-2">
-                        <span>📅 Started: {new Date(chain.start_date).toLocaleDateString()}</span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <span>📊 {chain.total_orders} orders</span>
-                        {(chain.roll_count || 0) > 0 && (
-                          <span>• {chain.roll_count} rolls</span>
-                        )}
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <span>💰 Net Premium: {formatCurrency(chain.net_premium || 0)}</span>
-                      </div>
-                    </div>
-                    
-                    {/* Chain Performance Summary */}
-                    <div className="mt-2 pt-2 border-t border-border/50">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-4 text-xs">
-                          <span>Credits: {formatCurrency(chain.total_credits_collected || 0)}</span>
-                          <span>Debits: {formatCurrency(chain.total_debits_paid || 0)}</span>
-                        </div>
-                        <div className={`text-sm font-medium ${(chain.total_pnl || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                          Chain P&L: {formatCurrency(chain.total_pnl || 0)}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-              
-              <div className="text-right ml-4">
-                <div className={`font-medium text-lg ${(chain.total_pnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {formatCurrency(chain.total_pnl || 0)}
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  Net: {formatCurrency(chain.net_premium || 0)}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {chain.total_orders} orders
-                </div>
-                
-                {/* Chain P&L Information */}
-                {showChainInfo && chain.chain_id && chain.total_pnl !== undefined && (
-                  <div className="text-xs text-muted-foreground mt-1">
-                    Chain: <span className={`${(chain.total_pnl || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                      {formatCurrency(chain.total_pnl || 0)}
-                    </span>
-                  </div>
-                )}
-              </div>
+      {/* Sync Progress Indicator */}
+      {showProgress && (
+        <SyncProgressIndicator 
+          isVisible={showProgress}
+          onComplete={handleSyncComplete}
+          className="mb-4"
+        />
+      )}
+
+      {/* Orders List */}
+      <div className="space-y-3">
+        <OptionsOrdersList
+          orders={orders}
+          loading={loading}
+          expandedOrders={expandedOrders}
+          onOrderToggle={toggleOrderExpansion}
+          formatCurrency={formatCurrency}
+          formatDateTime={formatDateTime}
+        />
+          
+        {/* Pagination */}
+        {pagination.total_pages > 1 && (
+          <div className="flex items-center justify-between mt-6 p-4 bg-gradient-to-r from-muted/10 to-muted/20 rounded-xl border border-muted/30">
+            <div className="text-sm text-muted-foreground">
+              📄 Showing <span className="font-medium">{((currentPage - 1) * 20) + 1}</span> to <span className="font-medium">{Math.min(currentPage * 20, pagination.total)}</span> of <span className="font-medium">{pagination.total}</span> orders
             </div>
-          )
-        })}
-        
-        {!historyExpanded && closedChains.length > 5 && (
-          <button
-            onClick={() => setHistoryExpanded(true)}
-            className="w-full text-center text-sm text-primary hover:text-primary/80 pt-2 py-2 rounded hover:bg-muted/30 transition-colors"
-          >
-            Show {closedChains.length - 5} more closed positions
-          </button>
+            <div className="flex space-x-2">
+                <button
+                  onClick={async () => {
+                    const newPage = Math.max(1, currentPage - 1)
+                    console.log('OptionsHistorySection: Previous page clicked, going to page:', newPage)
+                    setCurrentPage(newPage)
+                    try {
+                      setLoading(true)
+                      const response = await fetch(`/api/backend/options/orders?page=${newPage}&limit=20&state=filled&sort_by=created_at&sort_order=desc`)
+                      const data = await response.json()
+                      console.log('OptionsHistorySection: Previous page API response:', data)
+                      setOrdersData(data)
+                      setLoading(false)
+                    } catch (error) {
+                      console.error('OptionsHistorySection: Previous page error:', error)
+                      setLoading(false)
+                    }
+                  }}
+                  disabled={!pagination.has_prev || loading}
+                  className="px-4 py-2 text-sm bg-secondary/80 hover:bg-secondary text-secondary-foreground rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
+                >
+                  ← Previous
+                </button>
+                <span className="px-4 py-2 text-sm bg-primary/10 text-primary rounded-lg font-medium">
+                  {currentPage} of {pagination.total_pages}
+                </span>
+                <button
+                  onClick={async () => {
+                    const newPage = Math.min(pagination.total_pages, currentPage + 1)
+                    console.log('OptionsHistorySection: Next page clicked, going to page:', newPage)
+                    setCurrentPage(newPage)
+                    try {
+                      setLoading(true)
+                      const response = await fetch(`/api/backend/options/orders?page=${newPage}&limit=20&state=filled&sort_by=created_at&sort_order=desc`)
+                      const data = await response.json()
+                      console.log('OptionsHistorySection: Next page API response:', data)
+                      setOrdersData(data)
+                      setLoading(false)
+                    } catch (error) {
+                      console.error('OptionsHistorySection: Next page error:', error)
+                      setLoading(false)
+                    }
+                  }}
+                  disabled={!pagination.has_next || loading}
+                  className="px-4 py-2 text-sm bg-secondary/80 hover:bg-secondary text-secondary-foreground rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
+                >
+                  Next →
+                </button>
+            </div>
+          </div>
+        )}
+          
+        {/* Data source indicator */}
+        {ordersData?.data_source && (
+          <div className="text-xs text-muted-foreground text-center mt-3 p-2 bg-muted/20 rounded-lg border border-muted/30">
+            💾 Data source: {ordersData.data_source === 'database' ? 'Local database' : 'Robinhood API (fallback)'}
+          </div>
         )}
       </div>
     </div>
   )
-} 
+}

@@ -7,9 +7,16 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import Optional
 import logging
+import uuid
+from datetime import datetime
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, text
 
 from app.services.robinhood_service import RobinhoodService
 from app.schemas.common import DataResponse, ErrorResponse
+from app.core.security import create_access_token, ensure_demo_user_exists, get_password_hash
+from app.core.database import get_db
+from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +35,8 @@ class LoginResponse(BaseModel):
     """Login response model"""
     success: bool
     message: str
+    access_token: Optional[str] = None
+    token_type: str = "bearer"
     user_info: Optional[dict] = None
 
 
@@ -37,11 +46,78 @@ def get_robinhood_service() -> RobinhoodService:
     return RobinhoodService()
 
 
+async def get_or_create_user_for_robinhood_login(
+    db: AsyncSession, 
+    username: str,
+    rh_service: RobinhoodService
+) -> User:
+    """Find or create user for Robinhood login"""
+    try:
+        # First, try to find existing user by robinhood_username
+        stmt = select(User).where(User.robinhood_username == username)
+        result = await db.execute(stmt)
+        user = result.scalar_one_or_none()
+        
+        if user:
+            logger.info(f"Found existing user: {user.id} for Robinhood username: {username}")
+            return user
+        
+        # Use the specific target user for development/demo
+        # In production, this would link to the actual Robinhood user ID
+        target_user_id = "13461768-f848-4c04-aea2-46817bc9a3a5"  # User with full options history
+        
+        # Verify this user exists and has data
+        result = await db.execute(text("""
+            SELECT user_id FROM options_orders 
+            WHERE user_id = :user_id
+            LIMIT 1
+        """), {"user_id": target_user_id})
+        existing_user_id = result.scalar_one_or_none()
+        
+        if existing_user_id:
+            # Try to find the user record for this ID  
+            stmt = select(User).where(User.id == uuid.UUID(str(target_user_id)))
+            result = await db.execute(stmt)
+            existing_user = result.scalar_one_or_none()
+            
+            if existing_user:
+                # Update the existing user with Robinhood credentials
+                existing_user.robinhood_username = username
+                existing_user.last_login = datetime.utcnow()
+                await db.commit()
+                logger.info(f"Updated existing user {existing_user.id} with Robinhood login")
+                return existing_user
+        
+        # Create new user with the target user ID
+        user_id = uuid.UUID(str(target_user_id)) if existing_user_id else uuid.uuid4()
+        
+        user = User(
+            id=user_id,
+            email=f"{username}@robinhood.local",
+            full_name=f"Robinhood User ({username})",
+            robinhood_username=username,
+            is_active=True,
+            last_login=datetime.utcnow()
+        )
+        
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        
+        logger.info(f"Created new user {user.id} for Robinhood username: {username}")
+        return user
+        
+    except Exception as e:
+        logger.error(f"Error getting/creating user for Robinhood login: {str(e)}")
+        await db.rollback()
+        raise
+
+
 @router.post(
     "/robinhood/login",
     response_model=LoginResponse,
     responses={
-        200: {"description": "Robinhood login successful or requires MFA"},
+        200: {"description": "Robinhood login successful with JWT token"},
         401: {"description": "Authentication failed", "model": ErrorResponse},
         400: {"description": "Invalid request", "model": ErrorResponse},
         500: {"description": "Internal server error", "model": ErrorResponse}
@@ -49,9 +125,10 @@ def get_robinhood_service() -> RobinhoodService:
 )
 async def robinhood_login(
     request: LoginRequest,
-    rh_service: RobinhoodService = Depends(get_robinhood_service)
+    rh_service: RobinhoodService = Depends(get_robinhood_service),
+    db: AsyncSession = Depends(get_db)
 ):
-    """Authenticate with Robinhood (frontend-specific endpoint)"""
+    """Authenticate with Robinhood and return JWT token"""
     try:
         # Validate input
         if not request.username or not request.password:
@@ -69,10 +146,30 @@ async def robinhood_login(
         
         # Handle the response
         if auth_result["success"]:
+            # Find or create user in our database
+            user = await get_or_create_user_for_robinhood_login(
+                db=db, 
+                username=request.username,
+                rh_service=rh_service
+            )
+            
+            # Create JWT token with user ID
+            access_token = create_access_token(subject=str(user.id))
+            
+            # Update last login time
+            user.last_login = datetime.utcnow()
+            await db.commit()
+            
             return LoginResponse(
                 success=True,
                 message=auth_result["message"],
-                user_info={"username": request.username}
+                access_token=access_token,
+                token_type="bearer",
+                user_info={
+                    "user_id": str(user.id),
+                    "username": request.username,
+                    "email": user.email
+                }
             )
         else:
             # Authentication failed

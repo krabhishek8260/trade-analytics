@@ -78,7 +78,7 @@ export default function FilteredPositionsSection({
                   <div>
                     <div className="flex items-center space-x-2">
                       <SymbolLogo 
-                        symbol={position.underlying_symbol} 
+                        symbol={position.chain_symbol} 
                         size="lg" 
                         showText={true}
                         className="font-medium text-lg"

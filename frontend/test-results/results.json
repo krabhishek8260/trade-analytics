@@ -1,0 +1,1245 @@
+{
+  "config": {
+    "configFile": "/Users/abhishek/tradeanalytics-v2/frontend/playwright.config.ts",
+    "rootDir": "/Users/abhishek/tradeanalytics-v2/frontend/tests/e2e",
+    "forbidOnly": false,
+    "fullyParallel": true,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {},
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "html",
+        {
+          "outputFolder": "playwright-report"
+        }
+      ],
+      [
+        "json",
+        {
+          "outputFile": "test-results/results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/Users/abhishek/tradeanalytics-v2/frontend/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {},
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "/Users/abhishek/tradeanalytics-v2/frontend/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/abhishek/tradeanalytics-v2/frontend/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {},
+        "id": "firefox",
+        "name": "firefox",
+        "testDir": "/Users/abhishek/tradeanalytics-v2/frontend/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/abhishek/tradeanalytics-v2/frontend/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {},
+        "id": "webkit",
+        "name": "webkit",
+        "testDir": "/Users/abhishek/tradeanalytics-v2/frontend/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/abhishek/tradeanalytics-v2/frontend/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {},
+        "id": "Mobile Chrome",
+        "name": "Mobile Chrome",
+        "testDir": "/Users/abhishek/tradeanalytics-v2/frontend/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/Users/abhishek/tradeanalytics-v2/frontend/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {},
+        "id": "Mobile Safari",
+        "name": "Mobile Safari",
+        "testDir": "/Users/abhishek/tradeanalytics-v2/frontend/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.54.2",
+    "workers": 6,
+    "webServer": {
+      "command": "npm run dev",
+      "url": "http://localhost:3000",
+      "reuseExistingServer": true
+    }
+  },
+  "suites": [
+    {
+      "title": "options-history.spec.ts",
+      "file": "options-history.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Options History",
+          "file": "options-history.spec.ts",
+          "line": 3,
+          "column": 6,
+          "specs": [
+            {
+              "title": "should display options history section",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-4acf886abc2faeda6dcc",
+              "file": "options-history.spec.ts",
+              "line": 12,
+              "column": 7
+            },
+            {
+              "title": "should expand and show orders list",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-ea4cc3607aa240c6cd19",
+              "file": "options-history.spec.ts",
+              "line": 20,
+              "column": 7
+            },
+            {
+              "title": "should filter orders by symbol",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-7ec4fac9777c5080ff0e",
+              "file": "options-history.spec.ts",
+              "line": 33,
+              "column": 7
+            },
+            {
+              "title": "should handle pagination",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-357f897d0bbda0f244ea",
+              "file": "options-history.spec.ts",
+              "line": 53,
+              "column": 7
+            },
+            {
+              "title": "should expand individual order details",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-8716f65ec11b3e33e74a",
+              "file": "options-history.spec.ts",
+              "line": 74,
+              "column": 7
+            },
+            {
+              "title": "should trigger sync when sync button is clicked",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-ffebffd3cce4447f253d",
+              "file": "options-history.spec.ts",
+              "line": 94,
+              "column": 7
+            },
+            {
+              "title": "should display data source indicator",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-a6ba95006678a1b78a4d",
+              "file": "options-history.spec.ts",
+              "line": 108,
+              "column": 7
+            },
+            {
+              "title": "should handle different order states",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-ff59515d86d0dc721ff8",
+              "file": "options-history.spec.ts",
+              "line": 119,
+              "column": 7
+            },
+            {
+              "title": "should show symbol logos",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-42770a02b251b8324038",
+              "file": "options-history.spec.ts",
+              "line": 147,
+              "column": 7
+            },
+            {
+              "title": "should be responsive on mobile",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-dbe090c52a4e8693c148",
+              "file": "options-history.spec.ts",
+              "line": 162,
+              "column": 7
+            },
+            {
+              "title": "should handle empty state",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-776463f20c4ac8a43ae8",
+              "file": "options-history.spec.ts",
+              "line": 181,
+              "column": 7
+            },
+            {
+              "title": "should display options history section",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "firefox",
+                  "projectName": "firefox",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-b3932e876987f2512d3c",
+              "file": "options-history.spec.ts",
+              "line": 12,
+              "column": 7
+            },
+            {
+              "title": "should expand and show orders list",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "firefox",
+                  "projectName": "firefox",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-4f6ff0eab0d4ae7a1aab",
+              "file": "options-history.spec.ts",
+              "line": 20,
+              "column": 7
+            },
+            {
+              "title": "should filter orders by symbol",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "firefox",
+                  "projectName": "firefox",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-6c28a024e681afcc3421",
+              "file": "options-history.spec.ts",
+              "line": 33,
+              "column": 7
+            },
+            {
+              "title": "should handle pagination",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "firefox",
+                  "projectName": "firefox",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-c2450dfb70be40e8df20",
+              "file": "options-history.spec.ts",
+              "line": 53,
+              "column": 7
+            },
+            {
+              "title": "should expand individual order details",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "firefox",
+                  "projectName": "firefox",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-627cac63bf5ebefadaeb",
+              "file": "options-history.spec.ts",
+              "line": 74,
+              "column": 7
+            },
+            {
+              "title": "should trigger sync when sync button is clicked",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "firefox",
+                  "projectName": "firefox",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-398973c4580910888652",
+              "file": "options-history.spec.ts",
+              "line": 94,
+              "column": 7
+            },
+            {
+              "title": "should display data source indicator",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "firefox",
+                  "projectName": "firefox",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-f8a48c3290eebcc4c396",
+              "file": "options-history.spec.ts",
+              "line": 108,
+              "column": 7
+            },
+            {
+              "title": "should handle different order states",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "firefox",
+                  "projectName": "firefox",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-d51e8ec4ae9a6df74745",
+              "file": "options-history.spec.ts",
+              "line": 119,
+              "column": 7
+            },
+            {
+              "title": "should show symbol logos",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "firefox",
+                  "projectName": "firefox",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-0f781f5b2a890122d357",
+              "file": "options-history.spec.ts",
+              "line": 147,
+              "column": 7
+            },
+            {
+              "title": "should be responsive on mobile",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "firefox",
+                  "projectName": "firefox",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-1d5eaaba501d1632611c",
+              "file": "options-history.spec.ts",
+              "line": 162,
+              "column": 7
+            },
+            {
+              "title": "should handle empty state",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "firefox",
+                  "projectName": "firefox",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-351f27c62fd2f9ce8611",
+              "file": "options-history.spec.ts",
+              "line": 181,
+              "column": 7
+            },
+            {
+              "title": "should display options history section",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-7fa62314becea1db9d00",
+              "file": "options-history.spec.ts",
+              "line": 12,
+              "column": 7
+            },
+            {
+              "title": "should expand and show orders list",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-dac654451853dfad4027",
+              "file": "options-history.spec.ts",
+              "line": 20,
+              "column": 7
+            },
+            {
+              "title": "should filter orders by symbol",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-25dedf9714f728e19be7",
+              "file": "options-history.spec.ts",
+              "line": 33,
+              "column": 7
+            },
+            {
+              "title": "should handle pagination",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-08b9c520b20592b17087",
+              "file": "options-history.spec.ts",
+              "line": 53,
+              "column": 7
+            },
+            {
+              "title": "should expand individual order details",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-c0f630b93906608d805d",
+              "file": "options-history.spec.ts",
+              "line": 74,
+              "column": 7
+            },
+            {
+              "title": "should trigger sync when sync button is clicked",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-5662f071d92bc67aa633",
+              "file": "options-history.spec.ts",
+              "line": 94,
+              "column": 7
+            },
+            {
+              "title": "should display data source indicator",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-43e053b543e76af79a9f",
+              "file": "options-history.spec.ts",
+              "line": 108,
+              "column": 7
+            },
+            {
+              "title": "should handle different order states",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-b91933e4364ba114a245",
+              "file": "options-history.spec.ts",
+              "line": 119,
+              "column": 7
+            },
+            {
+              "title": "should show symbol logos",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-88e33959de297065357d",
+              "file": "options-history.spec.ts",
+              "line": 147,
+              "column": 7
+            },
+            {
+              "title": "should be responsive on mobile",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-2ef2ab599419ce89b06b",
+              "file": "options-history.spec.ts",
+              "line": 162,
+              "column": 7
+            },
+            {
+              "title": "should handle empty state",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "webkit",
+                  "projectName": "webkit",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-19afc691712c6b3ba3bd",
+              "file": "options-history.spec.ts",
+              "line": 181,
+              "column": 7
+            },
+            {
+              "title": "should display options history section",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "Mobile Chrome",
+                  "projectName": "Mobile Chrome",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-5f207610961a80ba4cf9",
+              "file": "options-history.spec.ts",
+              "line": 12,
+              "column": 7
+            },
+            {
+              "title": "should expand and show orders list",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "Mobile Chrome",
+                  "projectName": "Mobile Chrome",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-2cd576cb19f866518a3c",
+              "file": "options-history.spec.ts",
+              "line": 20,
+              "column": 7
+            },
+            {
+              "title": "should filter orders by symbol",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "Mobile Chrome",
+                  "projectName": "Mobile Chrome",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-83633143ad388c1841d8",
+              "file": "options-history.spec.ts",
+              "line": 33,
+              "column": 7
+            },
+            {
+              "title": "should handle pagination",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "Mobile Chrome",
+                  "projectName": "Mobile Chrome",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-8da47842921c88fd35ed",
+              "file": "options-history.spec.ts",
+              "line": 53,
+              "column": 7
+            },
+            {
+              "title": "should expand individual order details",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "Mobile Chrome",
+                  "projectName": "Mobile Chrome",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-5da498e3c8315c0f129b",
+              "file": "options-history.spec.ts",
+              "line": 74,
+              "column": 7
+            },
+            {
+              "title": "should trigger sync when sync button is clicked",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "Mobile Chrome",
+                  "projectName": "Mobile Chrome",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-a353b8360252c58bcecb",
+              "file": "options-history.spec.ts",
+              "line": 94,
+              "column": 7
+            },
+            {
+              "title": "should display data source indicator",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "Mobile Chrome",
+                  "projectName": "Mobile Chrome",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-7f5f07f126c2636e55b8",
+              "file": "options-history.spec.ts",
+              "line": 108,
+              "column": 7
+            },
+            {
+              "title": "should handle different order states",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "Mobile Chrome",
+                  "projectName": "Mobile Chrome",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-b1cd578875ab44f0ea45",
+              "file": "options-history.spec.ts",
+              "line": 119,
+              "column": 7
+            },
+            {
+              "title": "should show symbol logos",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "Mobile Chrome",
+                  "projectName": "Mobile Chrome",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-9a35611ae118dd4224ef",
+              "file": "options-history.spec.ts",
+              "line": 147,
+              "column": 7
+            },
+            {
+              "title": "should be responsive on mobile",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "Mobile Chrome",
+                  "projectName": "Mobile Chrome",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-09554e3016bdaaa59b43",
+              "file": "options-history.spec.ts",
+              "line": 162,
+              "column": 7
+            },
+            {
+              "title": "should handle empty state",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "Mobile Chrome",
+                  "projectName": "Mobile Chrome",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-cb9529322cb93523c1df",
+              "file": "options-history.spec.ts",
+              "line": 181,
+              "column": 7
+            },
+            {
+              "title": "should display options history section",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "Mobile Safari",
+                  "projectName": "Mobile Safari",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-29a5373c9b9aaec31d15",
+              "file": "options-history.spec.ts",
+              "line": 12,
+              "column": 7
+            },
+            {
+              "title": "should expand and show orders list",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "Mobile Safari",
+                  "projectName": "Mobile Safari",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-6a2582e763599da4a31c",
+              "file": "options-history.spec.ts",
+              "line": 20,
+              "column": 7
+            },
+            {
+              "title": "should filter orders by symbol",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "Mobile Safari",
+                  "projectName": "Mobile Safari",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-9c9ea23aef7d3623f600",
+              "file": "options-history.spec.ts",
+              "line": 33,
+              "column": 7
+            },
+            {
+              "title": "should handle pagination",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "Mobile Safari",
+                  "projectName": "Mobile Safari",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-deb807fb700bd19dc7d9",
+              "file": "options-history.spec.ts",
+              "line": 53,
+              "column": 7
+            },
+            {
+              "title": "should expand individual order details",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "Mobile Safari",
+                  "projectName": "Mobile Safari",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-fdf7f977eedb65cca31f",
+              "file": "options-history.spec.ts",
+              "line": 74,
+              "column": 7
+            },
+            {
+              "title": "should trigger sync when sync button is clicked",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "Mobile Safari",
+                  "projectName": "Mobile Safari",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-f00244b9eb24e2d87dcf",
+              "file": "options-history.spec.ts",
+              "line": 94,
+              "column": 7
+            },
+            {
+              "title": "should display data source indicator",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "Mobile Safari",
+                  "projectName": "Mobile Safari",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-a02fd16b02689f7ed75c",
+              "file": "options-history.spec.ts",
+              "line": 108,
+              "column": 7
+            },
+            {
+              "title": "should handle different order states",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "Mobile Safari",
+                  "projectName": "Mobile Safari",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-debd2e1494be3854b3b1",
+              "file": "options-history.spec.ts",
+              "line": 119,
+              "column": 7
+            },
+            {
+              "title": "should show symbol logos",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "Mobile Safari",
+                  "projectName": "Mobile Safari",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-b3d3e36438a073244c0f",
+              "file": "options-history.spec.ts",
+              "line": 147,
+              "column": 7
+            },
+            {
+              "title": "should be responsive on mobile",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "Mobile Safari",
+                  "projectName": "Mobile Safari",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-a94214fbc73577bb93bc",
+              "file": "options-history.spec.ts",
+              "line": 162,
+              "column": 7
+            },
+            {
+              "title": "should handle empty state",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "Mobile Safari",
+                  "projectName": "Mobile Safari",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "f720c987dabf9976565d-530777a7215cc3e95526",
+              "file": "options-history.spec.ts",
+              "line": 181,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2025-08-15T15:46:02.175Z",
+    "duration": 25.110000000000014,
+    "expected": 0,
+    "skipped": 55,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

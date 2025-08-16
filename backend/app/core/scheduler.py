@@ -15,6 +15,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
 
 from app.services.rolled_options_cron_service import RolledOptionsCronService
+from app.services.options_orders_background_service import OptionsOrdersBackgroundService
 from app.models.job_execution_log import JobExecutionLog
 from app.core.database import get_db
 
@@ -27,6 +28,7 @@ class BackgroundScheduler:
     def __init__(self):
         self.scheduler: Optional[AsyncIOScheduler] = None
         self.cron_service = RolledOptionsCronService()
+        self.options_orders_service = OptionsOrdersBackgroundService()
         self.is_running = False
     
     async def start(self):
@@ -61,6 +63,15 @@ class BackgroundScheduler:
                 trigger=IntervalTrigger(minutes=30),  # Every 30 minutes
                 id='rolled-options-processing',
                 name='Rolled Options Background Processing',
+                replace_existing=True
+            )
+            
+            # Schedule options orders sync job
+            self.scheduler.add_job(
+                func=self._process_options_orders_job,
+                trigger=IntervalTrigger(minutes=15),  # Every 15 minutes
+                id='options-orders-sync',
+                name='Options Orders Sync Processing',
                 replace_existing=True
             )
             
@@ -160,6 +171,68 @@ class BackgroundScheduler:
             # Save log entry to database
             await self._save_job_log(log_entry)
     
+    async def _process_options_orders_job(self):
+        """Background job to process options orders sync for all users"""
+        job_start = datetime.now()
+        logger.info("Starting options orders sync background processing job")
+        
+        # Create job execution log entry
+        log_entry = JobExecutionLog(
+            job_name="options-orders-sync",
+            job_id="options-orders-sync",
+            started_at=job_start,
+            triggered_manually=False
+        )
+        
+        try:
+            result = await self.options_orders_service.process_all_users()
+            
+            job_end = datetime.now()
+            duration = (job_end - job_start).total_seconds()
+            
+            # Update log entry with results
+            log_entry.completed_at = job_end
+            log_entry.duration_seconds = duration
+            log_entry.users_processed = result.get('users_processed', 0)
+            log_entry.orders_processed = result.get('total_orders', 0)
+            
+            if result.get('success'):
+                log_entry.status = 'success'
+                logger.info(
+                    f"Options orders sync completed successfully: "
+                    f"{result.get('users_processed', 0)} users, "
+                    f"{result.get('total_orders', 0)} orders, "
+                    f"{duration:.1f}s"
+                )
+            else:
+                log_entry.status = 'error'
+                log_entry.error_message = result.get('message', 'Unknown error')
+                logger.error(
+                    f"Options orders sync failed: {result.get('message', 'Unknown error')}"
+                )
+            
+            # Log any errors
+            if result.get('errors'):
+                logger.warning(f"Processing errors: {result['errors']}")
+                
+        except Exception as e:
+            job_end = datetime.now()
+            duration = (job_end - job_start).total_seconds()
+            
+            log_entry.completed_at = job_end
+            log_entry.duration_seconds = duration
+            log_entry.status = 'error'
+            log_entry.error_message = str(e)
+            
+            logger.error(
+                f"Options orders sync background job failed after {duration:.1f}s: {str(e)}", 
+                exc_info=True
+            )
+        
+        finally:
+            # Save log entry to database
+            await self._save_job_log(log_entry)
+    
     async def _daily_cleanup_job(self):
         """Daily cleanup job for database maintenance"""
         logger.info("Starting daily cleanup job")
@@ -229,6 +302,28 @@ class BackgroundScheduler:
                 
         except Exception as e:
             logger.error(f"Error triggering job: {str(e)}")
+            return {"success": False, "message": str(e)}
+    
+    async def trigger_options_orders_job(self) -> dict:
+        """Manually trigger the options orders sync job"""
+        if not self.scheduler:
+            return {"success": False, "message": "Scheduler not running"}
+        
+        try:
+            # Run the job immediately
+            job = self.scheduler.get_job('options-orders-sync')
+            if job:
+                self.scheduler.modify_job(
+                    'options-orders-sync',
+                    next_run_time=datetime.now()
+                )
+                logger.info("Manually triggered options orders sync job")
+                return {"success": True, "message": "Options orders sync job triggered successfully"}
+            else:
+                return {"success": False, "message": "Options orders sync job not found"}
+                
+        except Exception as e:
+            logger.error(f"Error triggering options orders job: {str(e)}")
             return {"success": False, "message": str(e)}
     
     async def _save_job_log(self, log_entry: JobExecutionLog):
