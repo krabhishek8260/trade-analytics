@@ -451,13 +451,11 @@ async def get_options_summary(
                 # Use the database service directly to get enhanced chains
                 from sqlalchemy import select
                 from app.models.rolled_options_chain import RolledOptionsChain
-                # Use the same user ID as rolled-options-v2 API for consistency
-                USER_ID = "123e4567-e89b-12d3-a456-426614174000"
-                
+
                 try:
-                    # Get chains directly from database
+                    # Get chains directly from database for current user
                     query = select(RolledOptionsChain).where(
-                        RolledOptionsChain.user_id == USER_ID,
+                        RolledOptionsChain.user_id == current_user_id,
                         RolledOptionsChain.status == "active"
                     ).limit(1000)
                     
@@ -519,6 +517,13 @@ async def get_options_summary(
                     # Create lookup map for positions to chain info
                     position_chain_map = {}
                     logger.info(f"Starting chain position mapping process...")
+
+                    # Normalize strike to fixed precision for reliable key matching
+                    def _norm_strike(val) -> str:
+                        try:
+                            return f"{float(val):.4f}"
+                        except Exception:
+                            return str(val)
                     
                     for chain in chains:
                         # Only consider active chains for position matching
@@ -531,8 +536,9 @@ async def get_options_summary(
                         
                         if latest_position:
                             # Create a key to match with current positions (normalize option_type to lowercase)
-                            option_type = str(latest_position['option_type']).lower()
-                            key = f"{chain['underlying_symbol']}_{latest_position['strike_price']}_{latest_position['expiration_date']}_{option_type}"
+                            option_type = str(latest_position.get('option_type', '')).lower()
+                            strike_key = _norm_strike(latest_position.get('strike_price'))
+                            key = f"{str(chain['underlying_symbol']).upper()}_{strike_key}_{latest_position.get('expiration_date')}_{option_type}"
                             
                             logger.info(f"Adding chain {chain['chain_id']} to position map with key: {key}")
                             
@@ -551,7 +557,9 @@ async def get_options_summary(
                     for position in positions:
                         # Normalize option_type to lowercase for consistent matching
                         pos_option_type = str(position.get('option_type', '')).lower()
-                        pos_key = f"{position.get('underlying_symbol')}_{position.get('strike_price')}_{position.get('expiration_date')}_{pos_option_type}"
+                        # Positions use chain_symbol for underlying in our data model
+                        strike_key = _norm_strike(position.get('strike_price'))
+                        pos_key = f"{str(position.get('chain_symbol')).upper()}_{strike_key}_{position.get('expiration_date')}_{pos_option_type}"
                         
                         if pos_key in position_chain_map:
                             logger.info(f"Found chain match for position: {pos_key}")
