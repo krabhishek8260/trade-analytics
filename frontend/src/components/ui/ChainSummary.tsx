@@ -37,12 +37,6 @@ export function ChainSummary({ summary, formatCurrency, className = '' }: ChainS
         subtitle="Collected"
         valueColor={summary.net_premium_collected >= 0 ? 'profit' : 'loss'}
       />
-      <SummaryCard
-        title="Total P&L"
-        value={formatCurrency(summary.total_pnl)}
-        subtitle="Realized + Unrealized"
-        valueColor={summary.total_pnl >= 0 ? 'profit' : 'loss'}
-      />
     </div>
   )
 }

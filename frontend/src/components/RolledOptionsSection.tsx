@@ -561,7 +561,7 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
                               {chain.orders.length} orders ({chain.roll_count || 0} rolls)
                             </div>
                           </div>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                             <div>
                               <span className="text-muted-foreground">Last Activity:</span>
                               <span className="font-medium ml-1">{formatDate(chain.last_activity_date)}</span>
@@ -574,12 +574,6 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
                               <span className="text-muted-foreground">Net Premium:</span>
                               <span className={`font-medium ml-1 ${chain.net_premium >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                                 {formatCurrency(chain.net_premium)}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-muted-foreground">Total P&L:</span>
-                              <span className={`font-medium ml-1 ${chain.total_pnl >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                                {formatCurrency(chain.total_pnl)}
                               </span>
                             </div>
                           </div>
