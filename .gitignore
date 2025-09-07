@@ -56,3 +56,7 @@ venv.bak/
 # OS
 .DS_Store
 Thumbs.db
+
+# Debug data
+debug_data/
+backend/debug_data/

@@ -1076,4 +1076,13 @@ export async function getRolledOptionsSyncStatus(): Promise<{ status: string; la
   return response.data
 }
 
+export async function getRolledOptionsSymbols(): Promise<{ symbols: string[]; symbol_counts: Record<string, number>; total_symbols: number }> {
+  const url = `/rolled-options-v2/symbols`
+  const response = await apiRequest<ApiResponse<{ symbols: string[]; symbol_counts: Record<string, number>; total_symbols: number }>>(url)
+  if (!response.data) {
+    throw new ApiError(500, 'No symbols data received')
+  }
+  return response.data
+}
+
 export { ApiError }

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { getRolledOptionsChains, OptionsChain, RolledOptionsResponse, OptionsOrder, triggerRolledOptionsSync, getRolledOptionsSyncStatus } from '@/lib/api'
+import { getRolledOptionsChains, OptionsChain, RolledOptionsResponse, OptionsOrder, triggerRolledOptionsSync, getRolledOptionsSyncStatus, getRolledOptionsSymbols } from '@/lib/api'
 import { ChainSummary } from './ui/ChainSummary'
 import { SymbolLogo } from './ui/SymbolLogo'
 import OptionsOrderLegs from './options/OptionsOrderLegs'
@@ -26,6 +26,7 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
   const [syncing, setSyncing] = useState(false)
   const [syncStatus, setSyncStatus] = useState<any>(null)
   const [syncError, setSyncError] = useState<string | null>(null)
+  const [availableSymbols, setAvailableSymbols] = useState<string[]>([])
 
   useEffect(() => {
     setCurrentPage(1)
@@ -34,6 +35,22 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
     fetchRolledOptions(1)
     fetchSyncStatus() // Also fetch sync status when filters change
   }, [selectedStatus, selectedSymbol, daysBack, pageSize])
+
+  // Fetch available symbols when component loads
+  useEffect(() => {
+    fetchAvailableSymbols()
+  }, [])
+
+  const fetchAvailableSymbols = async () => {
+    try {
+      const symbolsData = await getRolledOptionsSymbols()
+      setAvailableSymbols(symbolsData.symbols)
+    } catch (err) {
+      console.error('Failed to fetch available symbols:', err)
+      // Don't show error for symbols fetch failures, just use empty array
+      setAvailableSymbols([])
+    }
+  }
 
   const fetchSyncStatus = async () => {
     try {
@@ -59,6 +76,7 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
       setTimeout(() => {
         fetchRolledOptions(currentPage)
         fetchSyncStatus()
+        fetchAvailableSymbols() // Also refresh available symbols
       }, 3000) // Wait 3 seconds for processing to start
       
     } catch (err) {
@@ -167,9 +185,8 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
     }
   }
 
-  const uniqueSymbols = rolledOptions?.chains.map(chain => chain.underlying_symbol)
-    .filter((value, index, self) => self.indexOf(value) === index)
-    .sort() || []
+  // Use availableSymbols state instead of deriving from current page data
+  const uniqueSymbols = availableSymbols
 
   if (loading && !rolledOptions) {
     const estimatedTime = daysBack <= 30 ? "1-2 minutes" : 

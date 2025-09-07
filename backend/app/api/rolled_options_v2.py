@@ -539,3 +539,49 @@ async def _process_user_background(cron_service: RolledOptionsCronService, user_
         await cron_service._process_user_rolled_options(user_info)
     except Exception as e:
         logger.error(f"Background processing failed for user {user_info.get('user_id')}: {e}")
+
+
+@router.get(
+    "/symbols",
+    response_model=DataResponse,
+    responses={
+        200: {"description": "Available symbols retrieved successfully"},
+        500: {"description": "Internal server error", "model": ErrorResponse}
+    }
+)
+async def get_available_symbols(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get all available symbols that have rolled options chains
+    
+    **Returns:**
+    - List of unique symbols sorted alphabetically
+    - Symbol counts and metadata
+    """
+    try:
+        # Query for distinct symbols from user's chains
+        query = select(RolledOptionsChain.underlying_symbol, func.count()).where(
+            RolledOptionsChain.user_id == user_id
+        ).group_by(RolledOptionsChain.underlying_symbol)
+        
+        result = await db.execute(query)
+        symbol_data = result.all()
+        
+        # Extract symbols and counts
+        symbol_counts = {symbol: count for symbol, count in symbol_data}
+        symbols = sorted(symbol_counts.keys())
+        
+        return DataResponse(data={
+            "symbols": symbols,
+            "symbol_counts": symbol_counts,
+            "total_symbols": len(symbols)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error retrieving available symbols: {str(e)}")
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )

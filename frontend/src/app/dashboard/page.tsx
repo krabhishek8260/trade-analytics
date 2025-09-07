@@ -16,7 +16,7 @@ interface DashboardData {
   greeks: PortfolioGreeks | null
 }
 
-type TabType = 'portfolio' | 'stocks' | 'options' | 'analysis'
+type TabType = 'portfolio' | 'stocks' | 'options' | 'rolled-options' | 'analysis'
 
 // Portfolio Tab Component
 function PortfolioTab({ dashboardData, formatCurrency, formatPercent }: {
@@ -655,14 +655,30 @@ function OptionsTab({ options, greeks, formatCurrency, formatPercent, onToggleCh
         </div>
       </div>
 
-      {/* Rolled Options Section */}
-      <RolledOptionsSection formatCurrency={formatCurrency} formatPercent={formatPercent} />
-
       {/* Options History Section */}
       <OptionsHistorySection 
         formatCurrency={formatCurrency} 
         formatPercent={formatPercent} 
       />
+    </div>
+  )
+}
+
+// Rolled Options Tab Component
+function RolledOptionsTab({ formatCurrency, formatPercent }: {
+  formatCurrency: (value: number) => string
+  formatPercent: (value: number) => string
+}) {
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold mb-4">Rolled Options Chains</h2>
+        <p className="text-muted-foreground mb-6">
+          Track and analyze your rolled options positions - where you've closed existing options and opened new ones with different strikes or expiration dates.
+        </p>
+      </div>
+
+      <RolledOptionsSection formatCurrency={formatCurrency} formatPercent={formatPercent} />
     </div>
   )
 }
@@ -1210,7 +1226,7 @@ export default function Dashboard() {
               <div className="bg-card rounded-lg border overflow-hidden">
                 <div className="border-b border-border">
                   <nav className="flex space-x-8 px-6" aria-label="Tabs">
-                    {(['portfolio', 'stocks', 'options', 'analysis'] as TabType[]).map((tab) => (
+                    {(['portfolio', 'stocks', 'options', 'rolled-options', 'analysis'] as TabType[]).map((tab) => (
                       <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
@@ -1218,9 +1234,9 @@ export default function Dashboard() {
                           activeTab === tab
                             ? 'border-primary text-primary'
                             : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground'
-                        } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm capitalize transition-colors`}
+                        } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors`}
                       >
-                        {tab}
+                        {tab === 'rolled-options' ? 'Rolled Options' : tab.charAt(0).toUpperCase() + tab.slice(1)}
                         {tab === 'stocks' && dashboardData.stocks && (
                           <span className="ml-1 text-xs bg-muted rounded-full px-2 py-0.5">
                             {dashboardData.stocks.total_positions}
@@ -1264,6 +1280,7 @@ export default function Dashboard() {
                       {activeTab === 'portfolio' && <PortfolioTab dashboardData={dashboardData} formatCurrency={formatCurrency} formatPercent={formatPercent} />}
                       {activeTab === 'stocks' && <StocksTab stocks={dashboardData.stocks} formatCurrency={formatCurrency} formatPercent={formatPercent} />}
                       {activeTab === 'options' && <OptionsTab options={dashboardData.options} greeks={dashboardData.greeks} formatCurrency={formatCurrency} formatPercent={formatPercent} onToggleChains={handleToggleChains} showChains={showChains} onChainClick={handleChainClick} refreshing={refreshing} />}
+                      {activeTab === 'rolled-options' && <RolledOptionsTab formatCurrency={formatCurrency} formatPercent={formatPercent} />}
                       {activeTab === 'analysis' && <AnalysisTab formatCurrency={formatCurrency} formatPercent={formatPercent} />}
                     </>
                   )}

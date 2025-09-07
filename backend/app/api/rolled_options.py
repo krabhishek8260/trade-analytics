@@ -646,3 +646,54 @@ def _analyze_roll_direction(rolls):
         direction_counts[direction] = direction_counts.get(direction, 0) + 1
     
     return max(direction_counts.items(), key=lambda x: x[1])[0]
+
+@router.get(
+    "/symbols",
+    response_model=DataResponse,
+    responses={
+        200: {"description": "Available symbols retrieved successfully"},
+        500: {"description": "Internal server error", "model": ErrorResponse}
+    }
+)
+async def get_available_symbols(
+    days_back: int = Query(365, ge=30, le=1095, description="Number of days back to analyze for symbols"),
+    chain_detector: RolledOptionsChainDetector = Depends(get_database_chain_detector),
+    user_id: str = Depends(get_authenticated_user_id)
+):
+    """
+    Get all available symbols that have rolled options chains
+    
+    **Returns:**
+    - List of unique symbols sorted alphabetically
+    - Symbol counts and metadata
+    """
+    try:
+        # Get all chains without pagination to get all symbols
+        chains = await chain_detector.detect_chains_from_database(
+            user_id=user_id,
+            days_back=days_back,
+            symbol=None  # Get all symbols
+        )
+        
+        # Extract unique symbols and sort them
+        symbol_counts = {}
+        for chain in chains:
+            symbol = chain.get("underlying_symbol", "").upper()
+            if symbol:
+                symbol_counts[symbol] = symbol_counts.get(symbol, 0) + 1
+        
+        symbols = sorted(symbol_counts.keys())
+        
+        return DataResponse(data={
+            "symbols": symbols,
+            "symbol_counts": symbol_counts,
+            "total_symbols": len(symbols),
+            "analysis_period_days": days_back
+        })
+        
+    except Exception as e:
+        logger.error(f"Error retrieving available symbols: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
