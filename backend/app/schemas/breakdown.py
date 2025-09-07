@@ -29,6 +29,7 @@ class PositionBreakdown(BaseModel):
     """Individual position details within a breakdown component"""
     position_id: str
     underlying_symbol: str
+    chain_symbol: Optional[str] = None
     option_type: str
     strike_price: float
     expiration_date: str

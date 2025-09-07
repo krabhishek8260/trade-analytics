@@ -15,6 +15,9 @@ from app.schemas.common import DataResponse, ErrorResponse, ListResponse
 from app.schemas.options import OptionsSummary
 from app.core.security import get_current_user_id, ensure_demo_user_exists
 from app.core.database import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
+from app.models.options_order import OptionsOrder
 
 logger = logging.getLogger(__name__)
 
@@ -251,6 +254,78 @@ async def get_options_orders(
             detail="Internal server error"
         )
 
+
+@router.get(
+    "/orders/filters",
+    response_model=DataResponse,
+    responses={
+        200: {"description": "Distinct filter values retrieved successfully"},
+        401: {"description": "Unauthorized", "model": ErrorResponse},
+        500: {"description": "Internal server error", "model": ErrorResponse}
+    }
+)
+async def get_options_orders_filters(
+    user_id: UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """Return distinct symbols, strategies, states, and option types for the user's orders."""
+    try:
+        # Distinct symbols with counts
+        sym_q = select(OptionsOrder.chain_symbol, func.count()).where(
+            OptionsOrder.user_id == str(user_id),
+            OptionsOrder.chain_symbol.isnot(None)
+        ).group_by(OptionsOrder.chain_symbol)
+        sym_res = await db.execute(sym_q)
+        sym_rows = sym_res.all()
+        symbol_counts = {s: c for s, c in sym_rows}
+        symbols = sorted(symbol_counts.keys())
+
+        # Distinct strategies with counts
+        strat_q = select(OptionsOrder.strategy, func.count()).where(
+            OptionsOrder.user_id == str(user_id),
+            OptionsOrder.strategy.isnot(None)
+        ).group_by(OptionsOrder.strategy)
+        strat_res = await db.execute(strat_q)
+        strat_rows = strat_res.all()
+        strategy_counts = { (s or ""): c for s, c in strat_rows }
+        # Normalize to uppercase display but keep raw; frontend can show as-is
+        strategies = sorted([s for s in strategy_counts.keys() if s])
+
+        # Distinct states
+        state_q = select(OptionsOrder.state, func.count()).where(
+            OptionsOrder.user_id == str(user_id),
+            OptionsOrder.state.isnot(None)
+        ).group_by(OptionsOrder.state)
+        state_res = await db.execute(state_q)
+        state_rows = state_res.all()
+        state_counts = { s: c for s, c in state_rows }
+        states = sorted(state_counts.keys())
+
+        # Distinct option types
+        type_q = select(OptionsOrder.option_type, func.count()).where(
+            OptionsOrder.user_id == str(user_id),
+            OptionsOrder.option_type.isnot(None)
+        ).group_by(OptionsOrder.option_type)
+        type_res = await db.execute(type_q)
+        type_rows = type_res.all()
+        type_counts = { t: c for t, c in type_rows }
+        option_types = sorted([t for t in type_counts.keys() if t])
+
+        return DataResponse(data={
+            "symbols": symbols,
+            "strategies": strategies,
+            "states": states,
+            "option_types": option_types,
+            "counts": {
+                "symbol_counts": symbol_counts,
+                "strategy_counts": strategy_counts,
+                "state_counts": state_counts,
+                "option_type_counts": type_counts
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving options orders filters: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 @router.get(
     "/orders/sync-status",
@@ -675,7 +750,65 @@ async def get_options_summary(
             "last_updated": datetime.utcnow(),
             "positions": positions
         }
-        
+
+        # Chain-aware override ONLY for current positions (unrealized)
+        try:
+            from app.models.rolled_options_chain import RolledOptionsChain
+            from sqlalchemy import select as sq_select
+
+            # Fetch user's ACTIVE chains only
+            chains_query = sq_select(RolledOptionsChain).where(
+                RolledOptionsChain.user_id == current_user_id,
+                RolledOptionsChain.status == 'active'
+            )
+            chains_res = await db.execute(chains_query)
+            chain_rows = chains_res.scalars().all()
+
+            # Build mapping for active chains latest positions
+            def _norm_strike(val) -> str:
+                try:
+                    return f"{float(val):.4f}"
+                except Exception:
+                    return str(val)
+
+            active_map = {}
+            unrealized_chain_pnl = 0.0
+
+            for rec in chain_rows:
+                status = rec.status or "active"
+                total_pnl = float(rec.total_pnl or 0.0)
+                net_premium = float(rec.net_premium or 0.0)
+                # Prefer total_pnl; fall back to net_premium if total_pnl missing
+                chain_contrib = total_pnl if total_pnl != 0 else net_premium
+
+                if status == "active":
+                    unrealized_chain_pnl += chain_contrib
+                    # Map latest_position for matching positions not to double-count
+                    lp = (rec.chain_data or {}).get("latest_position")
+                    if lp and lp.get("option_type") and lp.get("strike_price") and lp.get("expiration_date"):
+                        key = f"{str(rec.underlying_symbol).upper()}_{_norm_strike(lp.get('strike_price'))}_{lp.get('expiration_date')}_{str(lp.get('option_type')).lower()}"
+                        active_map[key] = True
+
+            # Add unrealized from positions not in any chain
+            residual_unrealized = 0.0
+            for pos in positions:
+                pos_key = f"{str(pos.get('chain_symbol')).upper()}_{_norm_strike(pos.get('strike_price'))}_{pos.get('expiration_date')}_{str(pos.get('option_type','')).lower()}"
+                if pos_key not in active_map:
+                    residual_unrealized += float(pos.get('total_return', 0.0))
+
+            chain_aware_unrealized = unrealized_chain_pnl + residual_unrealized
+
+            # Override ONLY the Current P&L card (unrealized for current positions)
+            summary["total_return"] = chain_aware_unrealized
+            summary["total_return_percent"] = (chain_aware_unrealized / summary["total_cost"] * 100) if summary["total_cost"] > 0 else 0
+
+            # Add a marker for frontend/debugging
+            summary["chain_aware"] = True
+
+        except Exception as e:
+            logger.warning(f"Chain-aware override failed: {e}")
+            summary["chain_aware"] = False
+
         return DataResponse(data=summary)
         
     except HTTPException:

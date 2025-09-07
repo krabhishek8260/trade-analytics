@@ -720,10 +720,11 @@ class RobinhoodService:
                 greeks = position.get("greeks", {})
                 
                 # Adjust Greeks based on position size and direction
-                delta = greeks.get("delta", 0) * contracts * 100  # Delta per $1 move
-                gamma = greeks.get("gamma", 0) * contracts * 100  # Gamma per $1 move
-                theta = greeks.get("theta", 0) * contracts  # Theta per day
-                vega = greeks.get("vega", 0) * contracts  # Vega per 1% IV change
+                # Assumption: feed greeks are per-share; scale by 100 per contract for $-terms
+                delta = greeks.get("delta", 0) * contracts * 100   # $ change per $1 move
+                gamma = greeks.get("gamma", 0) * contracts * 100   # Δ change per $1 move (share-equivalent)
+                theta = greeks.get("theta", 0) * contracts * 100   # $ per day (time decay)
+                vega  = greeks.get("vega",  0) * contracts * 100   # $ per 1% IV change
                 rho = greeks.get("rho", 0) * contracts  # Rho per 1% rate change
                 
                 # Adjust for short positions (Greeks flip sign)
@@ -747,7 +748,7 @@ class RobinhoodService:
                 else:
                     portfolio_greeks["short_delta"] += abs(delta)
                 
-                # Daily theta decay (how much portfolio loses per day from time decay)
+                # Daily theta decay exposure (gross $/day from time decay)
                 portfolio_greeks["daily_theta_decay"] += abs(theta)
                 
                 # Vega exposure (sensitivity to volatility changes)

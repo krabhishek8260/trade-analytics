@@ -443,7 +443,7 @@ function OptionsTab({ options, greeks, formatCurrency, formatPercent, onToggleCh
           <h3 className="text-lg font-medium mb-3">Portfolio Greeks</h3>
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
             <div className="bg-muted/50 rounded-lg p-4">
-              <h4 className="text-sm font-medium text-muted-foreground mb-1">Delta</h4>
+              <h4 className="text-sm font-medium text-muted-foreground mb-1" title="$ change per $1 move (contract-scaled)">Delta</h4>
               <p className={`text-xl font-bold ${greeks.net_delta >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 {greeks.net_delta.toFixed(2)}
               </p>
@@ -452,12 +452,12 @@ function OptionsTab({ options, greeks, formatCurrency, formatPercent, onToggleCh
               </p>
             </div>
             <div className="bg-muted/50 rounded-lg p-4">
-              <h4 className="text-sm font-medium text-muted-foreground mb-1">Gamma</h4>
+              <h4 className="text-sm font-medium text-muted-foreground mb-1" title="Delta change per $1 move (share-equivalent)">Gamma</h4>
               <p className="text-xl font-bold">{greeks.net_gamma.toFixed(4)}</p>
               <p className="text-xs text-muted-foreground">Acceleration</p>
             </div>
             <div className="bg-muted/50 rounded-lg p-4">
-              <h4 className="text-sm font-medium text-muted-foreground mb-1">Theta</h4>
+              <h4 className="text-sm font-medium text-muted-foreground mb-1" title="$ per day (net time decay)">Theta</h4>
               <p className={`text-xl font-bold ${greeks.net_theta >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 {greeks.net_theta.toFixed(2)}
               </p>
@@ -466,16 +466,16 @@ function OptionsTab({ options, greeks, formatCurrency, formatPercent, onToggleCh
               </p>
             </div>
             <div className="bg-muted/50 rounded-lg p-4">
-              <h4 className="text-sm font-medium text-muted-foreground mb-1">Vega</h4>
+              <h4 className="text-sm font-medium text-muted-foreground mb-1" title="$ per 1% IV change (contract-scaled)">Vega</h4>
               <p className="text-xl font-bold">{greeks.net_vega.toFixed(2)}</p>
               <p className="text-xs text-muted-foreground">IV Risk</p>
             </div>
             <div className="bg-muted/50 rounded-lg p-4">
-              <h4 className="text-sm font-medium text-muted-foreground mb-1">Daily Decay</h4>
+              <h4 className="text-sm font-medium text-muted-foreground mb-1" title="Sum of absolute theta across positions ($/day)">Gross Daily Theta</h4>
               <p className="text-xl font-bold text-amber-600">
                 {formatCurrency(greeks.daily_theta_decay)}
               </p>
-              <p className="text-xs text-muted-foreground">Per day</p>
+              <p className="text-xs text-muted-foreground">Gross exposure ($/day)</p>
             </div>
           </div>
         </div>

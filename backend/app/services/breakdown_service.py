@@ -82,7 +82,7 @@ class BreakdownCalculator:
             data_freshness="real-time"
         )
     
-    async def calculate_total_return_breakdown(self, request: BreakdownRequest) -> BreakdownResponse:
+    async def calculate_total_return_breakdown(self, request: BreakdownRequest, user_id: Optional[str] = None) -> BreakdownResponse:
         """Calculate detailed breakdown for portfolio total return"""
         
         positions_result = await self.rh_service.get_options_positions()
@@ -91,15 +91,71 @@ class BreakdownCalculator:
         
         positions = positions_result["data"]
         
-        # Calculate totals
-        total_return = sum(pos["total_return"] for pos in positions)
-        total_cost = sum(abs(pos["total_cost"]) for pos in positions)
+        # Positions-only unrealized totals
+        positions_unrealized = sum(float(pos.get("total_return", 0)) for pos in positions)
+        total_cost = sum(abs(float(pos.get("total_cost", 0))) for pos in positions)
+        total_return = positions_unrealized
         return_percentage = (total_return / total_cost * 100) if total_cost > 0 else 0
+
+        # Optional chain-aware enrichment when user_id is provided
+        active_chain_unrealized = 0.0
+        largest_winner = 0.0
+        largest_loser = 0.0
+        if user_id:
+            try:
+                from app.core.database import AsyncSessionLocal
+                from sqlalchemy import select as sq_select
+                from app.models.rolled_options_chain import RolledOptionsChain
+
+                async with AsyncSessionLocal() as db:
+                    chains_res = await db.execute(
+                        sq_select(RolledOptionsChain).where(RolledOptionsChain.user_id == user_id)
+                    )
+                    chains = chains_res.scalars().all()
+
+                    # Map latest active positions to avoid double-counting
+                    def _norm_strike(val) -> str:
+                        try:
+                            return f"{float(val):.4f}"
+                        except Exception:
+                            return str(val)
+                    active_map = {}
+
+                    for c in chains:
+                        pnl = float(c.total_pnl or 0.0)
+                        if c.status == 'active':
+                            active_chain_unrealized += pnl
+                            lp = (c.chain_data or {}).get('latest_position')
+                            if lp and lp.get('option_type') and lp.get('strike_price') and lp.get('expiration_date'):
+                                key = f"{str(c.underlying_symbol).upper()}_{_norm_strike(lp.get('strike_price'))}_{lp.get('expiration_date')}_{str(lp.get('option_type')).lower()}"
+                                active_map[key] = True
+
+                        if pnl > 0:
+                            largest_winner = max(largest_winner, pnl)
+                        elif pnl < 0:
+                            largest_loser = min(largest_loser, pnl)
+
+                    # Residual unrealized from positions not part of any active chain
+                    residual_unrealized = 0.0
+                    for pos in positions:
+                        pos_key = f"{str(pos.get('chain_symbol')).upper()}_{_norm_strike(pos.get('strike_price'))}_{pos.get('expiration_date')}_{str(pos.get('option_type','')).lower()}"
+                        if pos_key not in active_map:
+                            val = float(pos.get('total_return', 0.0))
+                            residual_unrealized += val
+                            largest_winner = max(largest_winner, val)
+                            largest_loser = min(largest_loser, val)
+
+                    # Chain-aware total return for CURRENT positions only (unrealized)
+                    total_return = active_chain_unrealized + residual_unrealized
+                    return_percentage = (total_return / total_cost * 100) if total_cost > 0 else 0
+            except Exception:
+                # Leave positions-only values
+                pass
         
         # Winners and losers
-        winners = [pos for pos in positions if pos["total_return"] > 0]
-        losers = [pos for pos in positions if pos["total_return"] < 0]
-        neutral = [pos for pos in positions if pos["total_return"] == 0]
+        winners = [pos for pos in positions if pos.get("total_return", 0) > 0]
+        losers = [pos for pos in positions if pos.get("total_return", 0) < 0]
+        neutral = [pos for pos in positions if pos.get("total_return", 0) == 0]
         
         # Create calculation details
         calculation_details = self._create_total_return_calculation_details(
@@ -131,7 +187,12 @@ class BreakdownCalculator:
                 "losers": len(losers),
                 "neutral": len(neutral),
                 "win_rate": (len(winners) / len(positions) * 100) if positions else 0,
-                "average_return": total_return / len(positions) if positions else 0
+                "average_return": total_return / len(positions) if positions else 0,
+                # Enrichment (current positions only)
+                "realized_pnl": 0.0,
+                "unrealized_pnl": total_return,
+                "largest_winner": largest_winner,
+                "largest_loser": largest_loser
             },
             calculation_details=calculation_details,
             components=components,
@@ -317,7 +378,7 @@ class BreakdownCalculator:
         # Group positions
         for position in positions:
             if grouping == GroupingType.SYMBOL:
-                key = position.get("underlying_symbol", "UNKNOWN")
+                key = position.get("chain_symbol") or position.get("underlying_symbol") or "UNKNOWN"
             elif grouping == GroupingType.STRATEGY:
                 key = position.get("strategy", "UNKNOWN")
             elif grouping == GroupingType.POSITION_TYPE:
@@ -341,7 +402,8 @@ class BreakdownCalculator:
             position_breakdowns = [
                 PositionBreakdown(
                     position_id=pos.get("id", ""),
-                    underlying_symbol=pos.get("underlying_symbol", ""),
+                    underlying_symbol=pos.get("underlying_symbol", "") or (pos.get("chain_symbol") or ""),
+                    chain_symbol=pos.get("chain_symbol", None) or pos.get("underlying_symbol", None),
                     option_type=pos.get("option_type", ""),
                     strike_price=pos.get("strike_price", 0),
                     expiration_date=pos.get("expiration_date", ""),
@@ -387,7 +449,7 @@ class BreakdownCalculator:
         
         for position in positions:
             if grouping == GroupingType.SYMBOL:
-                key = position.get("underlying_symbol", "UNKNOWN")
+                key = position.get("chain_symbol") or position.get("underlying_symbol") or "UNKNOWN"
             elif grouping == GroupingType.STRATEGY:
                 key = position.get("strategy", "UNKNOWN")
             elif grouping == GroupingType.POSITION_TYPE:
@@ -417,7 +479,8 @@ class BreakdownCalculator:
             position_breakdowns = [
                 PositionBreakdown(
                     position_id=pos.get("id", ""),
-                    underlying_symbol=pos.get("underlying_symbol", ""),
+                    underlying_symbol=pos.get("underlying_symbol", "") or (pos.get("chain_symbol") or ""),
+                    chain_symbol=pos.get("chain_symbol", None) or pos.get("underlying_symbol", None),
                     option_type=pos.get("option_type", ""),
                     strike_price=pos.get("strike_price", 0),
                     expiration_date=pos.get("expiration_date", ""),
@@ -499,7 +562,7 @@ class BreakdownCalculator:
         levels = []
         
         if current_grouping != GroupingType.SYMBOL:
-            symbol_groups = len(set(pos.get("underlying_symbol", "UNKNOWN") for pos in positions))
+            symbol_groups = len(set((pos.get("chain_symbol") or pos.get("underlying_symbol") or "UNKNOWN") for pos in positions))
             levels.append(DrillDownLevel(
                 level=1,
                 name="By Symbol",

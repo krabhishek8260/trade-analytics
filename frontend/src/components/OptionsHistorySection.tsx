@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { 
   getOptionsOrders, 
+  getOptionsOrdersFilters,
   getOptionsOrdersSyncStatus, 
   triggerOptionsOrdersSync,
   PaginatedOptionsOrdersResponse, 
@@ -51,12 +52,18 @@ export default function OptionsHistorySection({
   const [historyExpanded, setHistoryExpanded] = useState(false)
   const [expandedOrders, setExpandedOrders] = useState<ExpandedOrderState>({})
   const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const [availableSymbols, setAvailableSymbols] = useState<string[]>([])
+  const [availableStrategies, setAvailableStrategies] = useState<string[]>([])
+  const [availableStates, setAvailableStates] = useState<string[]>([])
+  const [availableTypes, setAvailableTypes] = useState<string[]>([])
   
   // Filters
   const [filters, setFilters] = useState({
     symbol: '',
-    state: 'filled', // Still filter to filled orders in API, just don't show the badge
+    state: '', // default to All
     strategy: '',
+    option_type: '',
     sort_by: 'created_at',
     sort_order: 'desc'
   })
@@ -79,10 +86,11 @@ export default function OptionsHistorySection({
       const [ordersResponse, statusResponse] = await Promise.all([
         getOptionsOrders({
           page,
-          limit: 20,
+          limit: pageSize,
           underlying_symbol: filters.symbol || undefined,
           state: filters.state || undefined,
           strategy: filters.strategy || undefined,
+          option_type: filters.option_type || undefined,
           sort_by: filters.sort_by,
           sort_order: filters.sort_order
         }),
@@ -96,6 +104,16 @@ export default function OptionsHistorySection({
         fullResponse: ordersResponse
       })
       setOrdersData(ordersResponse)
+      // Also refresh available filter values from backend (distinct across all orders)
+      try {
+        const filtersData = await getOptionsOrdersFilters()
+        setAvailableSymbols(filtersData.symbols || [])
+        setAvailableStrategies(filtersData.strategies || [])
+        setAvailableStates(filtersData.states || [])
+        setAvailableTypes(filtersData.option_types || [])
+      } catch (e) {
+        console.warn('Failed to load filters metadata', e)
+      }
       if (statusResponse) {
         setSyncStatus(statusResponse)
       }
@@ -105,7 +123,7 @@ export default function OptionsHistorySection({
     } finally {
       setLoading(false)
     }
-  }, [filters])
+  }, [filters, pageSize])
 
   // Auto-load data only when expanded
   const [autoLoaded, setAutoLoaded] = useState(false)
@@ -119,6 +137,12 @@ export default function OptionsHistorySection({
         setAutoLoaded(true)
         // Use the proper API function instead of direct fetch
         fetchOrdersData(1)
+        getOptionsOrdersFilters().then(meta => {
+          setAvailableSymbols(meta.symbols || [])
+          setAvailableStrategies(meta.strategies || [])
+          setAvailableStates(meta.states || [])
+          setAvailableTypes(meta.option_types || [])
+        }).catch(() => {})
       }
     } catch (error) {
       console.error('OptionsHistorySection: Error in useEffect:', error)
@@ -147,6 +171,13 @@ export default function OptionsHistorySection({
     setSyncing(false)
     setShowProgress(false)
     fetchOrdersData(currentPage)
+    // Refresh filters after sync
+    getOptionsOrdersFilters().then(meta => {
+      setAvailableSymbols(meta.symbols || [])
+      setAvailableStrategies(meta.strategies || [])
+      setAvailableStates(meta.states || [])
+      setAvailableTypes(meta.option_types || [])
+    }).catch(() => {})
   }
 
   const toggleHistoryExpanded = () => {
@@ -167,7 +198,9 @@ export default function OptionsHistorySection({
 
   const handleFilterChange = (key: string, value: string) => {
     setFilters(prev => ({ ...prev, [key]: value }))
-    setCurrentPage(1) // Reset to first page when filtering
+    setCurrentPage(1)
+    // Fetch immediately when filters change (consistent with dashboard sections)
+    setTimeout(() => fetchOrdersData(1), 0)
   }
 
   const formatDateTime = (dateStr: string | null) => {
@@ -320,44 +353,90 @@ export default function OptionsHistorySection({
       </div>
 
       {/* Filters */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 p-4 bg-gradient-to-r from-muted/20 to-muted/30 rounded-xl border border-muted/40">
-        <input
-          type="text"
-          placeholder="🔍 Symbol (e.g., AAPL)"
-          value={filters.symbol}
-          onChange={(e) => handleFilterChange('symbol', e.target.value)}
-          className="px-4 py-2 border-2 border-muted/40 rounded-lg focus:border-primary/50 focus:ring-2 focus:ring-primary/20 transition-all"
-        />
-        <select
-          value={filters.strategy}
-          onChange={(e) => handleFilterChange('strategy', e.target.value)}
-          className="px-4 py-2 border-2 border-muted/40 rounded-lg focus:border-primary/50 focus:ring-2 focus:ring-primary/20 transition-all"
-        >
-          <option value="">📊 All Strategies</option>
-          <option value="covered_call">Covered Call</option>
-          <option value="cash_secured_put">Cash Secured Put</option>
-          <option value="iron_condor">Iron Condor</option>
-          <option value="straddle">Straddle</option>
-        </select>
-        <input
-          type="date"
-          placeholder="📅 Date Range"
-          className="px-4 py-2 border-2 border-muted/40 rounded-lg focus:border-primary/50 focus:ring-2 focus:ring-primary/20 transition-all"
-        />
-        <select
-          value={`${filters.sort_by}_${filters.sort_order}`}
-          onChange={(e) => {
-            const [sortBy, sortOrder] = e.target.value.split('_')
-            setFilters(prev => ({ ...prev, sort_by: sortBy, sort_order: sortOrder }))
-            setCurrentPage(1)
-          }}
-          className="px-4 py-2 border-2 border-muted/40 rounded-lg focus:border-primary/50 focus:ring-2 focus:ring-primary/20 transition-all"
-        >
-          <option value="created_at_desc">⬇️ Newest First</option>
-          <option value="created_at_asc">⬆️ Oldest First</option>
-          <option value="processed_premium_desc">💰 Highest Premium</option>
-          <option value="processed_premium_asc">💸 Lowest Premium</option>
-        </select>
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-3 p-4 bg-muted/20 rounded-xl border border-muted/40">
+        <div>
+          <label className="block text-sm font-medium text-muted-foreground mb-1">Symbol</label>
+          <select
+            value={filters.symbol}
+            onChange={(e) => handleFilterChange('symbol', e.target.value)}
+            className="px-3 py-2 border border-input bg-background rounded-md text-sm w-full"
+          >
+            <option value="">All Symbols</option>
+            {availableSymbols.map(sym => (
+              <option key={sym} value={sym}>{sym}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-muted-foreground mb-1">Strategy</label>
+          <select
+            value={filters.strategy}
+            onChange={(e) => handleFilterChange('strategy', e.target.value)}
+            className="px-3 py-2 border border-input bg-background rounded-md text-sm w-full"
+          >
+            <option value="">All Strategies</option>
+            {availableStrategies.map(st => (
+              <option key={st} value={st}>{st}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-muted-foreground mb-1">Type</label>
+          <select
+            value={filters.option_type}
+            onChange={(e) => handleFilterChange('option_type', e.target.value)}
+            className="px-3 py-2 border border-input bg-background rounded-md text-sm w-full"
+          >
+            <option value="">All Types</option>
+            {availableTypes.map(t => (
+              <option key={t} value={t.toLowerCase()}>{t.toUpperCase()}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-muted-foreground mb-1">State</label>
+          <select
+            value={filters.state}
+            onChange={(e) => handleFilterChange('state', e.target.value)}
+            className="px-3 py-2 border border-input bg-background rounded-md text-sm w-full"
+          >
+            <option value="">All States</option>
+            {availableStates.map(s => (
+              <option key={s} value={s.toLowerCase()}>{s}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-muted-foreground mb-1">Sort</label>
+          <select
+            value={`${filters.sort_by}_${filters.sort_order}`}
+            onChange={(e) => {
+              const [sortBy, sortOrder] = e.target.value.split('_')
+              setFilters(prev => ({ ...prev, sort_by: sortBy, sort_order: sortOrder }))
+              setCurrentPage(1)
+              fetchOrdersData(1)
+            }}
+            className="px-3 py-2 border border-input bg-background rounded-md text-sm w-full"
+          >
+            <option value="created_at_desc">Newest First</option>
+            <option value="created_at_asc">Oldest First</option>
+            <option value="processed_premium_desc">Highest Premium</option>
+            <option value="processed_premium_asc">Lowest Premium</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-muted-foreground mb-1">Per Page</label>
+          <select
+            value={pageSize}
+            onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); fetchOrdersData(1) }}
+            className="px-3 py-2 border border-input bg-background rounded-md text-sm w-full"
+          >
+            <option value={10}>10</option>
+            <option value={20}>20</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
+        </div>
       </div>
 
       {/* Sync Progress Indicator */}

@@ -526,6 +526,32 @@ export async function getOptionsOrders(params?: {
   }
 }
 
+// Options Orders Filters API
+export async function getOptionsOrdersFilters(): Promise<{
+  symbols: string[]
+  strategies: string[]
+  states: string[]
+  option_types: string[]
+  counts?: {
+    symbol_counts: Record<string, number>
+    strategy_counts: Record<string, number>
+    state_counts: Record<string, number>
+    option_type_counts: Record<string, number>
+  }
+}> {
+  const response = await apiRequest<ApiResponse<{
+    symbols: string[]
+    strategies: string[]
+    states: string[]
+    option_types: string[]
+    counts?: any
+  }>>('/options/orders/filters')
+  if (!response.data) {
+    throw new ApiError(500, 'No options orders filters received')
+  }
+  return response.data
+}
+
 // Legacy function for backward compatibility
 export async function getOptionsOrdersLegacy(params?: {
   limit?: number

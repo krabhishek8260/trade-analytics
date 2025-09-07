@@ -24,7 +24,7 @@ export default function BreakdownPage() {
   const [breakdownData, setBreakdownData] = useState<BreakdownResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [isAuthenticated, setIsAuthenticated] = useState(true)
   
   // State from URL parameters
   const [currentGrouping, setCurrentGrouping] = useState<GroupingType>(
@@ -41,27 +41,20 @@ export default function BreakdownPage() {
   )
   const [expandedComponents, setExpandedComponents] = useState<Set<string>>(new Set())
 
-  // Auth check
+  // Soft auth check (non-blocking): show breakdown where possible even if not authenticated
   useEffect(() => {
-    const checkAuth = async () => {
+    const checkAuthSoft = async () => {
       try {
-        const authStatus = localStorage.getItem('robinhood_authenticated')
-        if (authStatus === 'true') {
-          const backendAuth = await checkAuthStatus()
-          setIsAuthenticated(backendAuth.authenticated)
-          if (!backendAuth.authenticated) {
-            router.push('/login')
-          }
-        } else {
-          router.push('/login')
-        }
+        const backendAuth = await checkAuthStatus()
+        setIsAuthenticated(backendAuth.authenticated)
       } catch (error) {
-        console.error('Auth check failed:', error)
-        router.push('/login')
+        // Non-blocking: allow page to function in demo/offline mode
+        setIsAuthenticated(true)
       }
     }
-    checkAuth()
-  }, [router])
+    checkAuthSoft()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Update URL when state changes
   useEffect(() => {
@@ -187,9 +180,7 @@ export default function BreakdownPage() {
     console.log('Export functionality to be implemented')
   }
 
-  if (!isAuthenticated) {
-    return null // Will redirect to login
-  }
+  // Always render; API calls will surface errors if auth is required
 
   return (
     <div className="min-h-screen bg-background">

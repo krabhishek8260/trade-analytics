@@ -10,6 +10,7 @@ from typing import Optional
 import logging
 
 from app.services.robinhood_service import RobinhoodService
+from app.core.security import get_current_user_id
 from app.services.breakdown_service import BreakdownCalculator
 from app.schemas.breakdown import (
     BreakdownResponse, BreakdownRequest, GreeksBreakdownRequest,
@@ -80,7 +81,8 @@ async def get_total_value_breakdown(
 )
 async def get_total_return_breakdown(
     request: BreakdownRequest = Body(...),
-    calculator: BreakdownCalculator = Depends(get_breakdown_calculator)
+    calculator: BreakdownCalculator = Depends(get_breakdown_calculator),
+    user_id: str = Depends(get_current_user_id)
 ):
     """
     Get detailed breakdown of portfolio total return
@@ -92,7 +94,7 @@ async def get_total_return_breakdown(
     - Grouping options for detailed analysis
     """
     try:
-        breakdown = await calculator.calculate_total_return_breakdown(request)
+        breakdown = await calculator.calculate_total_return_breakdown(request, user_id=user_id)
         return DataResponse(data=breakdown)
         
     except ValueError as e:
