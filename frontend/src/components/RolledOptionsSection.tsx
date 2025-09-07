@@ -329,31 +329,7 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
         
         {sectionExpanded && (
           <div className="mt-4 space-y-6">
-            {/* Summary Cards */}
-            <ChainSummary 
-              summary={rolledOptions.summary} 
-              formatCurrency={formatCurrency}
-              className="mb-6"
-            />
-
-            {/* Performance Warning */}
-            {daysBack > 90 && (
-              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-                <div className="flex items-center">
-                  <svg className="w-5 h-5 text-yellow-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                  </svg>
-                  <div className="text-sm">
-                    <p className="text-yellow-800 font-medium">
-                      Large date range selected ({daysBack} days)
-                    </p>
-                    <p className="text-yellow-700">
-                      This may take 2-5 minutes to load. Consider using smaller date ranges or pagination for better performance.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Performance Warning removed as requested */}
 
             {/* Filters */}
             <div className="flex flex-wrap gap-4 mb-6">
@@ -424,29 +400,66 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
                   <option value={100}>100</option>
                 </select>
               </div>
-              <div className="flex items-end space-x-2">
-                <button
-                  onClick={() => fetchRolledOptions(1)}
-                  className="px-4 py-2 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 transition-colors"
-                >
-                  Refresh
-                </button>
-                <button
-                  onClick={() => handleSync(false)}
-                  disabled={syncing}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {syncing ? 'Syncing...' : 'Sync Chains'}
-                </button>
-                <button
-                  onClick={() => handleSync(true)}
-                  disabled={syncing}
-                  className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {syncing ? 'Syncing...' : 'Full Sync'}
-                </button>
+              <div className="ml-auto flex flex-col items-end gap-1">
+                <div className="flex items-end gap-2">
+                  <button
+                    onClick={() => fetchRolledOptions(1)}
+                    className="px-3 py-1.5 text-xs md:text-sm bg-secondary text-secondary-foreground rounded-md border border-border hover:bg-secondary/80 transition-colors"
+                  >
+                    {loading ? 'Refreshing…' : 'Refresh'}
+                  </button>
+                  <button
+                    onClick={() => handleSync(false)}
+                    disabled={syncing}
+                    className="px-3 py-1.5 text-xs md:text-sm bg-secondary text-secondary-foreground rounded-md border border-border hover:bg-secondary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {syncing ? 'Syncing…' : 'Sync Chains'}
+                  </button>
+                  <button
+                    onClick={() => handleSync(true)}
+                    disabled={syncing}
+                    className="px-3 py-1.5 text-xs md:text-sm bg-secondary text-secondary-foreground rounded-md border border-border hover:bg-secondary/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {syncing ? 'Syncing…' : 'Full Sync'}
+                  </button>
+                </div>
+                {(syncing || syncError || syncStatus) && (
+                  <div className="text-xs text-muted-foreground flex items-center gap-2 mt-1">
+                    {syncing ? (
+                      <>
+                        <span className="inline-flex h-2 w-2 rounded-full bg-blue-500 animate-pulse"></span>
+                        <span>Processing rolled options chains… (2–5 minutes)</span>
+                      </>
+                    ) : syncError ? (
+                      <>
+                        <span className="inline-flex h-2 w-2 rounded-full bg-red-500"></span>
+                        <span className="text-red-600 dark:text-red-400">Sync error: {syncError}</span>
+                      </>
+                    ) : syncStatus ? (
+                      <>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-green-100 text-green-800 border border-green-200">🟢 Chains up to date</span>
+                        {syncStatus.last_successful && (
+                          <span>
+                            Last sync: {new Date(syncStatus.last_successful).toLocaleString()} (
+                            {syncStatus.data_age_minutes < 60 
+                              ? `${syncStatus.data_age_minutes}m ago` 
+                              : `${Math.round((syncStatus.data_age_minutes || 0) / 60)}h ago`}
+                            )
+                          </span>
+                        )}
+                      </>
+                    ) : null}
+                  </div>
+                )}
               </div>
             </div>
+
+            {/* Summary Cards (moved below filters) */}
+            <ChainSummary 
+              summary={rolledOptions.summary} 
+              formatCurrency={formatCurrency}
+              className="mb-6"
+            />
 
             {/* Display Info */}
             <div className="flex justify-between items-center mb-4">
@@ -503,132 +516,7 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
               </div>
             )}
 
-            {/* Filtered Chains Summary */}
-            {rolledOptions.chains.length > 0 && (selectedSymbol || selectedStatus !== 'all' || selectedStrategy) && (
-              <div className="mb-6 relative overflow-hidden">
-                {/* Background with subtle pattern */}
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-indigo-500/10 to-purple-500/10 dark:from-blue-400/5 dark:via-indigo-400/5 dark:to-purple-400/5"></div>
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent dark:via-black/10"></div>
-                
-                {/* Main container */}
-                <div className="relative backdrop-blur-sm bg-white/70 dark:bg-black/30 border-2 border-blue-200/60 dark:border-blue-700/60 rounded-xl shadow-lg shadow-blue-100/50 dark:shadow-blue-900/20 p-6">
-                  {/* Header section */}
-                  <div className="flex items-start justify-between mb-6">
-                    <div className="space-y-2">
-                      <div className="flex items-center space-x-2">
-                        <div className="w-3 h-3 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full shadow-sm"></div>
-                        <h4 className="text-lg font-semibold bg-gradient-to-r from-blue-700 to-indigo-700 dark:from-blue-300 dark:to-indigo-300 bg-clip-text text-transparent">
-                          Filtered Results Summary
-                        </h4>
-                      </div>
-                      <div className="flex items-center space-x-1 text-sm">
-                        {selectedSymbol && (
-                          <div className="inline-flex items-center px-2.5 py-1 rounded-full bg-blue-100 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-700">
-                            <span className="text-blue-700 dark:text-blue-300 font-medium text-xs">
-                              📈 {selectedSymbol}
-                            </span>
-                          </div>
-                        )}
-                        {selectedStatus !== 'all' && (
-                          <div className={`inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-medium ${
-                            selectedStatus === 'active' 
-                              ? 'bg-green-100 dark:bg-green-900/40 border-green-200 dark:border-green-700 text-green-700 dark:text-green-300'
-                              : selectedStatus === 'closed'
-                              ? 'bg-gray-100 dark:bg-gray-900/40 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300'
-                              : 'bg-red-100 dark:bg-red-900/40 border-red-200 dark:border-red-700 text-red-700 dark:text-red-300'
-                          }`}>
-                            {selectedStatus === 'active' ? '🟢' : selectedStatus === 'closed' ? '⚫' : '🔴'} {selectedStatus.charAt(0).toUpperCase() + selectedStatus.slice(1)}
-                          </div>
-                        )}
-                        {selectedStrategy && (
-                          <div className={`inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-medium bg-purple-100 dark:bg-purple-900/40 border-purple-200 dark:border-purple-700 text-purple-700 dark:text-purple-300`}>
-                            🔍 {selectedStrategy}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    
-                    {/* Main metric highlight */}
-                    <div className="text-right">
-                      <div className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-1 uppercase tracking-wide">
-                        Total Net Premium
-                      </div>
-                      <div className={`text-2xl font-bold mb-1 ${
-                        rolledOptions.chains.reduce((sum, chain) => sum + chain.net_premium, 0) >= 0 
-                          ? 'text-green-600 dark:text-green-400 drop-shadow-sm' 
-                          : 'text-red-600 dark:text-red-400 drop-shadow-sm'
-                      }`}>
-                        {formatCurrency(rolledOptions.chains.reduce((sum, chain) => sum + chain.net_premium, 0))}
-                      </div>
-                      <div className="inline-flex items-center px-2 py-1 rounded-full bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800">
-                        <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
-                          {rolledOptions.chains.length} chain{rolledOptions.chains.length !== 1 ? 's' : ''}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Metrics grid */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-blue-200/50 dark:border-blue-700/50">
-                    {/* Total P&L Card */}
-                    <div className="group relative p-4 rounded-lg bg-white/50 dark:bg-black/20 border border-gray-200/60 dark:border-gray-700/60 hover:border-blue-300 dark:hover:border-blue-600 transition-all duration-200 hover:shadow-md">
-                      <div className="absolute top-2 right-2 opacity-20 group-hover:opacity-30 transition-opacity">
-                        📊
-                      </div>
-                      <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">
-                        Total P&L
-                      </div>
-                      <div className={`text-lg font-bold ${
-                        rolledOptions.chains.reduce((sum, chain) => sum + chain.total_pnl, 0) >= 0 
-                          ? 'text-green-600 dark:text-green-400' 
-                          : 'text-red-600 dark:text-red-400'
-                      }`}>
-                        {formatCurrency(rolledOptions.chains.reduce((sum, chain) => sum + chain.total_pnl, 0))}
-                      </div>
-                    </div>
-
-                    {/* Total Orders Card */}
-                    <div className="group relative p-4 rounded-lg bg-white/50 dark:bg-black/20 border border-gray-200/60 dark:border-gray-700/60 hover:border-blue-300 dark:hover:border-blue-600 transition-all duration-200 hover:shadow-md">
-                      <div className="absolute top-2 right-2 opacity-20 group-hover:opacity-30 transition-opacity">
-                        📋
-                      </div>
-                      <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">
-                        Total Orders
-                      </div>
-                      <div className="text-lg font-bold text-blue-700 dark:text-blue-300">
-                        {rolledOptions.chains.reduce((sum, chain) => sum + chain.orders.length, 0)}
-                      </div>
-                    </div>
-
-                    {/* Credits Collected Card */}
-                    <div className="group relative p-4 rounded-lg bg-white/50 dark:bg-black/20 border border-gray-200/60 dark:border-gray-700/60 hover:border-green-300 dark:hover:border-green-600 transition-all duration-200 hover:shadow-md">
-                      <div className="absolute top-2 right-2 opacity-20 group-hover:opacity-30 transition-opacity">
-                        💰
-                      </div>
-                      <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">
-                        Credits Collected
-                      </div>
-                      <div className="text-lg font-bold text-green-600 dark:text-green-400">
-                        {formatCurrency(rolledOptions.chains.reduce((sum, chain) => sum + chain.total_credits_collected, 0))}
-                      </div>
-                    </div>
-
-                    {/* Debits Paid Card */}
-                    <div className="group relative p-4 rounded-lg bg-white/50 dark:bg-black/20 border border-gray-200/60 dark:border-gray-700/60 hover:border-red-300 dark:hover:border-red-600 transition-all duration-200 hover:shadow-md">
-                      <div className="absolute top-2 right-2 opacity-20 group-hover:opacity-30 transition-opacity">
-                        💸
-                      </div>
-                      <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">
-                        Debits Paid
-                      </div>
-                      <div className="text-lg font-bold text-red-600 dark:text-red-400">
-                        {formatCurrency(rolledOptions.chains.reduce((sum, chain) => sum + chain.total_debits_paid, 0))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Filtered Chains Summary removed as requested */}
 
             {/* Chains List */}
             {rolledOptions.chains.length === 0 ? (
