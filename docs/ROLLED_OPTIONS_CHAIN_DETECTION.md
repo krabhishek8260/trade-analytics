@@ -283,6 +283,55 @@ Frontend Integration
   - `getRolledOptionsSyncStatus()` → `/rolled-options-v2/status` (poll progress/freshness)
 - After processing completes, Redis caches for rolled options are cleared server‑side, so the next UI fetch returns fresh chains.
 
+## Updating Existing Chains (When a Roll Happens)
+
+End-to-End Flow
+
+- New broker fill: a roll (close+open) or a final close is filled at Robinhood.
+- Orders sync: `/options/orders/sync` ingests it into `options_orders` (incremental uses last sync minus 1 day buffer).
+- Rolled processing: `/rolled-options-v2/sync` runs the detector on DB orders, rebuilds the chain, and upserts to `rolled_options_chains`.
+
+Detector Behavior (Rebuild + Merge)
+
+- Rebuilds sequences using strategy codes, code continuity, and roll heuristics; merges overlaps preferring the longer chain, and drops strict subsets.
+- Chain ID stays stable (strategy-code or `SYMBOL_firstOrderId`), so DB upsert updates the same record.
+
+Database Upsert (Update-in-Place)
+
+- Key: `(user_id, chain_id)` conflict target.
+- On update, refreshes: `status`, `initial_strategy`, `last_activity_date`, `total_orders`, `roll_count`, `total_credits_collected`, `total_debits_paid`, `net_premium`, `total_pnl`, `chain_data`, `summary_metrics`, `processed_at`, `updated_at`.
+- Full sync: clears user’s chains then rebuilds all; incremental: upserts without delete.
+
+Status Transitions
+
+- Closed if opens==closes, or last order contains any close, or typical credit→debit pattern (short premium then buyback).
+- Otherwise active; if latest expiry has passed, may mark as expired.
+
+Cache + UI Refresh
+
+- After storing, server clears Redis keys `rolled_options:*`; next UI fetch of `/rolled-options-v2/chains` shows the updated chain immediately.
+
+Manual vs Automatic Triggers
+
+- Automatic: background cycle (~30 minutes) runs orders sync → detect → upsert → cache‑clear.
+- Manual (immediate):
+  - POST `/options/orders/sync`
+  - POST `/rolled-options-v2/sync`
+  - Poll `/rolled-options-v2/status` until `status=completed`.
+
+Relevant Code
+
+- Orders incremental since-time: `backend/app/services/options_order_service.py:84`
+- Orders for detection: `backend/app/services/options_order_service.py:878`
+- Detector entry (DB-first): `backend/app/services/rolled_options_chain_detector.py:63`
+- Detector status calc: `backend/app/services/rolled_options_chain_detector.py:492`
+- Closed/open logic: `backend/app/services/rolled_options_chain_detector.py:508`
+- Merge/dedupe preference: `backend/app/services/rolled_options_chain_detector.py:159`
+- Subset dedupe: `backend/app/services/rolled_options_chain_detector.py:202`
+- Chain upsert fields (on conflict): `backend/app/services/rolled_options_cron_service.py:640`
+- Full sync delete: `backend/app/services/rolled_options_cron_service.py:268`
+- Cache clear after processing: `backend/app/services/rolled_options_cron_service.py:321`
+
 
 ## Diagrams
 
