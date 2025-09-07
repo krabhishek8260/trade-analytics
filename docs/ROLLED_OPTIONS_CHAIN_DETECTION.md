@@ -205,3 +205,464 @@ Detected as one chain with 3 orders, 1 roll, precise opens/closes continuity, an
 - Logic details: `backend/ROLL_DETECTION_LOGIC.md`
 - Enhanced process notes: `backend/ENHANCED_CHAINS_DOCUMENTATION.md`
 
+## Sync & Refresh
+
+How data gets from Robinhood to your dashboard and stays fresh.
+
+Orders Sync (Source of Truth)
+
+- Endpoint: `/options/orders/sync` (POST)
+- Service: `OptionsOrderService.sync_options_orders(user_id, force_full_sync, days_back)`
+- Full sync:
+  - Use when onboarding or after schema changes.
+  - Looks back up to 365 days by default (configurable via `days_back`).
+  - Fetches from Robinhood API and stores into `options_orders`.
+- Incremental sync:
+  - Default path when `force_full_sync=false`.
+  - Computes `since_time` from the last successful sync (with a 1‑day safety buffer) and pulls only new/updated orders.
+  - Much faster; safe to run frequently.
+- Status: `/options/orders/sync-status` returns last sync info and counts.
+
+Rolled Chains Processing (Compute Layer)
+
+- Endpoint: `/rolled-options-v2/sync` (POST)
+- Service: `RolledOptionsCronService`
+- Full vs incremental:
+  - Full: clears existing `rolled_options_chains` for the user, then rebuilds all chains (uses extended lookback in detection).
+  - Incremental: upserts chains; does not delete existing; updates affected symbols/periods.
+- Steps during processing:
+  - Load orders (DB‑first, extended lookback for enhanced detection when needed).
+  - Detect chains (`RolledOptionsChainDetector.detect_chains_from_database`).
+  - Analyze and upsert each chain to `rolled_options_chains` (atomic per‑chain nested transactions).
+  - Update `user_rolled_options_sync` with counts and timestamps; schedule next run ~30 minutes.
+  - Expire Redis caches with pattern `rolled_options:*` so the UI reads fresh data immediately.
+- Status: `/rolled-options-v2/status` returns `status`, `last_processed`, `last_successful`, `data_age_minutes`.
+
+Dashboard Refresh After Placing a New Order
+
+- Automatic path:
+  - A background cycle runs about every 30 minutes. Your new order will appear after the next:
+    1) Orders sync writes it to `options_orders`.
+    2) Rolled processing recomputes and upserts chains, clears cache.
+  - UI fetches from `/rolled-options-v2/chains` and will reflect fresh data once caches clear.
+- Manual refresh (immediate):
+  - Trigger orders sync:
+    - `POST /options/orders/sync` (optional: `?force_full_sync=true`)
+  - Trigger rolled chains processing:
+    - `POST /rolled-options-v2/sync` (optional: `?force_full_sync=true`)
+  - Check status:
+    - `GET /rolled-options-v2/status` until `status` shows `completed`.
+  - Optional: expire caches explicitly if needed:
+    - `POST /rolled-options-v2/cache/expire` (clears `rolled_options:*`).
+
+Quick Examples (curl)
+
+```
+# 1) Incremental orders sync (fast)
+curl -X POST \
+  "http://localhost:8000/api/v1/options/orders/sync"
+
+# 2) Trigger rolled chains processing
+curl -X POST \
+  "http://localhost:8000/api/v1/rolled-options-v2/sync"
+
+# 3) Watch processing status
+curl "http://localhost:8000/api/v1/rolled-options-v2/status" | jq
+
+# 4) (Optional) Expire caches if testing
+curl -X POST \
+  "http://localhost:8000/api/v1/rolled-options-v2/cache/expire"
+```
+
+Frontend Integration
+
+- The UI calls:
+  - `getRolledOptionsChains()` → `/rolled-options-v2/chains` (paginated, filtered)
+  - `triggerOptionsOrdersSync()` → `/options/orders/sync` (manual pull)
+  - `triggerRolledOptionsSync()` → `/rolled-options-v2/sync` (manual recompute)
+  - `getRolledOptionsSyncStatus()` → `/rolled-options-v2/status` (poll progress/freshness)
+- After processing completes, Redis caches for rolled options are cleared server‑side, so the next UI fetch returns fresh chains.
+
+
+## Diagrams
+
+Data Flow
+
+Robinhood API
+  │  (sync via OptionsOrderService)
+  ▼
+options_orders (DB)
+  │  (read: get_orders_for_chain_detection)
+  ▼
+Detector (strategy-code, continuity, heuristic, form-source)
+  │  (validate, merge, dedupe)
+  ▼
+rolled_options_chains (DB)
+  │  (read: API v2)
+  ▼
+Frontend (chains, summary, pagination)
+
+Patterns (single leg abbreviations: SO=Sell/Open, BO=Buy/Open, SC=Sell/Close, BC=Buy/Close)
+
+Sell-to-Open
+
+Order 1: SO ──▶ position open
+Order 2: BC + SO ──▶ roll (close old, open new)
+Order 3: BC ──▶ final close
+
+Buy-to-Open
+
+Order 1: BO ──▶ position open
+Order 2: SC + BO ──▶ roll (close old, open new)
+Order 3: SC ──▶ final close
+
+## Field Glossary
+
+Options Orders (`options_orders`)
+
+- id: UUID; DB primary key; example: 4b4c1f0d-...-c2b1
+- user_id: UUID; owner; example: 9e9e3d3a-...-ab12
+- order_id: string; broker order ID; example: 2b9f3c5e-...
+- state: string; order state; example: filled
+- type: string; order type; example: limit
+- chain_id: string; broker chain identifier; example: 0a1b2c3d...
+- chain_symbol: string; underlying; example: NVDA
+- processed_quantity: numeric; contracts filled; example: 1.0
+- processed_premium: numeric; total premium; example: 152.34
+- premium: numeric; per-contract premium; example: 1.52
+- direction: string; credit|debit; example: credit
+- strategy: string; strategy label; example: single, calendar_spread, roll
+- opening_strategy: string; opening strategy; example: short_put
+- closing_strategy: string; closing strategy; example: buy_to_close
+- created_at: timestamptz; broker created; example: 2025-02-01T15:34:12Z
+- updated_at: timestamptz; broker updated; example: 2025-02-01T15:35:20Z
+- legs_count: int; number of legs; example: 2
+- legs_details: JSONB; raw legs array; example: [{ position_effect: "close", side: "buy", option_type: "put", strike_price: 50, expiration_date: "2025-03-21", quantity: 1 }]
+- leg_index: int; primary leg index for indexing; example: 0
+- leg_id: string; broker leg identifier; example: 4d5e...
+- side: string; buy|sell (primary leg); example: sell
+- position_effect: string; open|close (primary leg); example: open
+- option_type: string; call|put (primary leg); example: put
+- strike_price: numeric; strike (primary leg); example: 50.0
+- expiration_date: string; YYYY-MM-DD (primary leg); example: 2025-03-21
+- long_strategy_code: string; grouping code (long legs); example: STRAT_A
+- short_strategy_code: string; grouping code (short legs); example: STRAT_B
+- raw_data: JSONB; original broker payload; example: { ... }
+- db_created_at: timestamptz; row created; example: 2025-02-01T15:36:00Z
+- db_updated_at: timestamptz; row updated; example: 2025-02-01T15:36:00Z
+
+Rolled Options Chains (`rolled_options_chains`)
+
+- id: UUID; DB primary key; example: 7f8c...
+- user_id: UUID; owner; example: 9e9e3d3a-...-ab12
+- chain_id: string; chain identifier (stable per chain); example: NVDA_2b9f3c5e
+- underlying_symbol: string; ticker; example: NVDA
+- status: string; active|closed|expired; example: active
+- initial_strategy: string; first recognizable strategy; example: short_put
+- start_date: timestamptz; first order time; example: 2024-12-01T14:00:00Z
+- last_activity_date: timestamptz; last order time; example: 2025-02-18T20:10:00Z
+- total_orders: int; number of orders in chain; example: 3
+- roll_count: int; rolls (typically total_orders - 1 if starting from a pure open); example: 1
+- total_credits_collected: numeric; sum of credits; example: 230.00
+- total_debits_paid: numeric; sum of debits; example: 180.50
+- net_premium: numeric; credits - debits; example: 49.50
+- total_pnl: numeric; realized + unrealized; example: 65.20
+- chain_data: JSONB; full chain payload for UI; example: { orders: [...], latest_position: {...}, enhanced: true, chain_type: "enhanced" }
+- summary_metrics: JSONB; dashboard roll-ups; example: { avg_roll_interval_days: 14 }
+- created_at: timestamptz; row created; example: 2025-02-18T21:00:00Z
+- updated_at: timestamptz; row updated; example: 2025-02-18T21:00:00Z
+- processed_at: timestamptz; last processing time; example: 2025-02-18T21:00:00Z
+
+User Rolled Options Sync (`user_rolled_options_sync`) — status/freshness
+
+- user_id: UUID; primary key and FK
+- last_processed_at: timestamptz; last attempt timestamp
+- last_successful_sync: timestamptz; last success timestamp
+- next_sync_after: timestamptz; scheduled next run
+- total_chains / active_chains / closed_chains: ints; counts
+- total_orders_processed: int; processed orders count
+- processing_status: string; pending|processing|completed|error
+- error_message: text; last error (if any)
+- retry_count: int; retries so far
+- full_sync_required: bool; whether next should be full
+- incremental_sync_enabled: bool; toggle incremental mode
+
+## JSON Examples
+
+Example `legs_details` (two-leg roll)
+
+```
+[
+  {
+    "position_effect": "close",
+    "side": "buy",
+    "option_type": "put",
+    "strike_price": 50.0,
+    "expiration_date": "2025-03-21",
+    "quantity": 1,
+    "long_strategy_code": null,
+    "short_strategy_code": "STRAT_A"
+  },
+  {
+    "position_effect": "open",
+    "side": "sell",
+    "option_type": "put",
+    "strike_price": 55.0,
+    "expiration_date": "2025-04-18",
+    "quantity": 1,
+    "long_strategy_code": null,
+    "short_strategy_code": "STRAT_B"
+  }
+]
+```
+
+Example `chain_data` persisted on a chain
+
+```
+{
+  "enhanced": true,
+  "chain_type": "enhanced",
+  "latest_position": {
+    "strike_price": 55.0,
+    "expiration_date": "2025-04-18",
+    "option_type": "put"
+  },
+  "orders": [
+    {
+      "id": "order-1",
+      "state": "filled",
+      "direction": "credit",
+      "created_at": "2024-12-01T14:00:00Z",
+      "form_source": null,
+      "strategy": "single",
+      "chain_symbol": "NVDA",
+      "legs": [
+        {
+          "position_effect": "open",
+          "side": "sell",
+          "option_type": "put",
+          "strike_price": 50.0,
+          "expiration_date": "2025-01-17",
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "id": "order-2",
+      "state": "filled",
+      "direction": "credit",
+      "created_at": "2024-12-10T14:00:00Z",
+      "form_source": "strategy_roll",
+      "strategy": "roll",
+      "chain_symbol": "NVDA",
+      "legs": [
+        {
+          "position_effect": "close",
+          "side": "buy",
+          "option_type": "put",
+          "strike_price": 50.0,
+          "expiration_date": "2025-01-17",
+          "quantity": 1
+        },
+        {
+          "position_effect": "open",
+          "side": "sell",
+          "option_type": "put",
+          "strike_price": 55.0,
+          "expiration_date": "2025-04-18",
+          "quantity": 1
+        }
+      ],
+      "roll_details": {
+        "type": "roll",
+        "close_position": {
+          "strike_price": 50.0,
+          "expiration_date": "2025-01-17",
+          "option_type": "put"
+        },
+        "open_position": {
+          "strike_price": 55.0,
+          "expiration_date": "2025-04-18",
+          "option_type": "put"
+        }
+      }
+    },
+    {
+      "id": "order-3",
+      "state": "filled",
+      "direction": "debit",
+      "created_at": "2025-02-18T20:10:00Z",
+      "strategy": "single",
+      "chain_symbol": "NVDA",
+      "legs": [
+        {
+          "position_effect": "close",
+          "side": "buy",
+          "option_type": "put",
+          "strike_price": 55.0,
+          "expiration_date": "2025-04-18",
+          "quantity": 1
+        }
+      ]
+    }
+  ],
+  "metrics": {
+    "total_orders": 3,
+    "roll_count": 1,
+    "total_credits_collected": 230.0,
+    "total_debits_paid": 180.5,
+    "net_premium": 49.5
+  }
+}
+```
+
+## End-to-End Walkthrough (Real Example)
+
+This walkthrough mirrors the SMCI example chain captured in `SMCI_CHAIN_EXAMPLES.md` and demonstrates how a chain moves from raw orders to a persisted `rolled_options_chains` row.
+
+Input Orders (SMCI PUT roll)
+
+- 2024-07-16: SELL to OPEN 1 SMCI PUT $790 exp 2024-07-26 (credit 1145.00)
+- 2024-07-24: BUY to CLOSE $790 PUT (07/26) + SELL to OPEN $790 PUT (08/02) (credit 900.00)
+- 2024-07-30: BUY to CLOSE $790 PUT (08/02) + SELL to OPEN $790 PUT (08/09) (credit 800.00)
+- 2024-08-07: BUY to CLOSE 1 SMCI PUT $790 exp 2024-08-09 (debit 245.00)
+
+Detection Steps
+
+- Group by symbol/type: all orders are `SMCI` `put` → same group.
+- Identify roll orders: the 2 middle orders each have 2 legs with both `open` and `close`.
+- Build chain: start from single‑leg open (first order), stitch each roll that closes the prior open and opens the next, then include the final single‑leg close.
+- Time window: first→last within 240 days (passes).
+
+Validation Checks
+
+- First order: single leg with `position_effect='open'` (passes).
+- Middle orders: exactly one `close` + one `open` leg (passes).
+- Last order: single leg with `position_effect='close'` (passes).
+- Position continuity: each `close` matches a previously opened position (strike/type/expiry, opposite side) (passes).
+
+Derived Metrics
+
+- Total credits collected: 1145.00 + 900.00 + 800.00 = 2845.00
+- Total debits paid: 245.00
+- Net premium: 2845.00 − 245.00 = 2600.00
+- Total orders: 4; Roll count: 2
+- Status: closed (last order contains a closing leg; opens == closes)
+
+Persisted Chain (rolled_options_chains)
+
+- chain_id: stable chain key (e.g., from first order)
+- underlying_symbol: SMCI
+- status: closed
+- initial_strategy: short_put (derived from first open)
+- start_date: 2024-07-16T…
+- last_activity_date: 2024-08-07T…
+- total_orders: 4
+- roll_count: 2
+- total_credits_collected: 2845.00
+- total_debits_paid: 245.00
+- net_premium: 2600.00
+- total_pnl: populated by PnL service if applicable
+- chain_data: includes `orders` (as seen), `enhanced: true` when chain starts with a single‑leg open, and optionally `latest_position` for active chains
+
+## Exact JSON Excerpts (SMCI)
+
+Source file: `backend/debug_data/20250907_163416_options_orders.json`
+
+Opening order (single leg SELL to OPEN 790 PUT exp 2024‑07‑26)
+
+```
+{
+  "id": "6696a566-d6de-4ae4-b645-0f553f5f54a1",
+  "created_at": "2024-07-16T16:52:54.169096Z",
+  "direction": "credit",
+  "strategy": null,
+  "form_source": "option_chain",
+  "legs": [
+    {
+      "position_effect": "open",
+      "side": "sell",
+      "option_type": "put",
+      "strike_price": "790.0000",
+      "expiration_date": "2024-07-26"
+    }
+  ]
+}
+```
+
+Roll #1 (CLOSE 07/26 → OPEN 08/02)
+
+```
+{
+  "id": "66a120aa-4446-48d7-a452-6c8213605943",
+  "created_at": "2024-07-24T15:41:30.552833Z",
+  "direction": "credit",
+  "strategy": "short_put_calendar_spread",
+  "form_source": "strategy_roll",
+  "legs": [
+    {
+      "position_effect": "close",
+      "side": "buy",
+      "option_type": "put",
+      "strike_price": "790.0000",
+      "expiration_date": "2024-07-26"
+    },
+    {
+      "position_effect": "open",
+      "side": "sell",
+      "option_type": "put",
+      "strike_price": "790.0000",
+      "expiration_date": "2024-08-02"
+    }
+  ]
+}
+```
+
+Roll #2 (CLOSE 08/02 → OPEN 08/09)
+
+```
+{
+  "id": "66a91dce-ece3-4257-bacb-7ea49ce44494",
+  "created_at": "2024-07-30T17:07:26.062704Z",
+  "direction": "credit",
+  "strategy": "short_put_calendar_spread",
+  "form_source": "strategy_roll",
+  "legs": [
+    {
+      "position_effect": "close",
+      "side": "buy",
+      "option_type": "put",
+      "strike_price": "790.0000",
+      "expiration_date": "2024-08-02"
+    },
+    {
+      "position_effect": "open",
+      "side": "sell",
+      "option_type": "put",
+      "strike_price": "790.0000",
+      "expiration_date": "2024-08-09"
+    }
+  ]
+}
+```
+
+Final close (single leg BUY to CLOSE 790 PUT exp 2024‑08‑09)
+
+```
+{
+  "id": "66b3798b-d793-47f9-9d31-186cbfeb2333",
+  "created_at": "2024-08-07T13:41:31.061894Z",
+  "direction": "debit",
+  "strategy": "long_put",
+  "form_source": "strategy_detail",
+  "legs": [
+    {
+      "position_effect": "close",
+      "side": "buy",
+      "option_type": "put",
+      "strike_price": "790.0000",
+      "expiration_date": "2024-08-09"
+    }
+  ]
+}
+```
