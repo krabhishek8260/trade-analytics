@@ -1515,6 +1515,26 @@ class RolledOptionsChainDetector:
             # Calculate latest position from the most recent order
             latest_position = self._calculate_latest_position(chain)
             
+            # Calculate roll count precisely: count multi-leg orders that both close and open (i.e., true rolls)
+            def _count_rolls(orders: List[Dict[str, Any]]) -> int:
+                try:
+                    count = 0
+                    for o in orders or []:
+                        # Prefer explicit roll detection
+                        if self._is_roll_order(o):
+                            count += 1
+                            continue
+                        # Fallback on legs analysis
+                        legs = o.get('legs', []) or []
+                        if len(legs) >= 2:
+                            has_open = any((l.get('position_effect') or '').lower() == 'open' for l in legs)
+                            has_close = any((l.get('position_effect') or '').lower() == 'close' for l in legs)
+                            if has_open and has_close:
+                                count += 1
+                    return count
+                except Exception:
+                    return 0
+            
             return {
                 'chain_id': chain_id,
                 'underlying_symbol': underlying_symbol,
@@ -1523,7 +1543,7 @@ class RolledOptionsChainDetector:
                 'start_date': start_date,
                 'last_activity_date': last_activity_date,
                 'total_orders': len(chain),
-                'roll_count': max(0, len(chain) - 1),
+                'roll_count': _count_rolls(chain),
                 'total_credits_collected': total_credits,
                 'total_debits_paid': total_debits,
                 'net_premium': net_premium,
@@ -1544,7 +1564,7 @@ class RolledOptionsChainDetector:
                 'start_date': chain[0].get('created_at', '') if chain else '',
                 'last_activity_date': chain[-1].get('created_at', '') if chain else '',
                 'total_orders': len(chain),
-                'roll_count': max(0, len(chain) - 1),
+                'roll_count': 0,
                 'total_credits_collected': 0.0,
                 'total_debits_paid': 0.0,
                 'net_premium': 0.0,
