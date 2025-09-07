@@ -576,11 +576,7 @@ function OptionsTab({ options, greeks, formatCurrency, formatPercent, onToggleCh
                       >
                         🔗 CHAIN
                       </button>
-                      {position.is_latest_in_chain && (
-                        <span className="text-xs px-2 py-1 rounded bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 border border-orange-300 dark:border-orange-700">
-                          🔥 LATEST
-                        </span>
-                      )}
+                      {/* Removed 'LATEST' badge for positions */}
                     </>
                   )}
                   
