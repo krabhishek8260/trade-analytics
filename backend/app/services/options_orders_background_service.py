@@ -19,7 +19,7 @@ Key Features:
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, func, and_, or_, text
@@ -52,7 +52,7 @@ class OptionsOrdersBackgroundService:
         Returns:
             Summary of processing results
         """
-        start_time = datetime.now()
+        start_time = datetime.now(timezone.utc)
         logger.info("Starting options orders background processing for all users")
         
         try:
@@ -107,7 +107,7 @@ class OptionsOrdersBackgroundService:
                     await self._update_sync_status(str(user_info['user_id']), 'error', error_msg)
                     errors.append(error_msg)
             
-            processing_time = (datetime.now() - start_time).total_seconds()
+            processing_time = (datetime.now(timezone.utc) - start_time).total_seconds()
             
             return {
                 'success': True,
@@ -125,7 +125,7 @@ class OptionsOrdersBackgroundService:
                 'message': f'Background processing failed: {str(e)}',
                 'users_processed': 0,
                 'total_orders': 0,
-                'processing_time': (datetime.now() - start_time).total_seconds()
+                'processing_time': (datetime.now(timezone.utc) - start_time).total_seconds()
             }
     
     async def _get_users_needing_processing(self) -> List[Dict[str, Any]]:
@@ -148,7 +148,7 @@ class OptionsOrdersBackgroundService:
                     # Users with no orders OR orders older than 1 hour
                     or_(
                         func.count(OptionsOrder.id) == 0,
-                        func.max(OptionsOrder.created_at) < datetime.now() - timedelta(hours=1)
+                        func.max(OptionsOrder.created_at) < datetime.now(timezone.utc) - timedelta(hours=1)
                     )
                 )
                 
@@ -248,10 +248,10 @@ class OptionsOrdersBackgroundService:
             cache_key = f"options_orders_sync_progress:{user_id}"
             progress_with_timestamp = {
                 **progress,
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'user_id': user_id
             }
-            await cache.set(cache_key, progress_with_timestamp, expire=3600)  # 1 hour
+            await cache.set(cache_key, progress_with_timestamp, ttl=3600)  # 1 hour
         except Exception as e:
             logger.warning(f"Failed to store progress in cache: {str(e)}")
     
@@ -271,19 +271,19 @@ class OptionsOrdersBackgroundService:
             next_sync = None
             if status == 'completed':
                 # Incremental sync every 15 minutes
-                next_sync = datetime.now() + timedelta(minutes=15)
+                next_sync = datetime.now(timezone.utc) + timedelta(minutes=15)
             
             status_data = {
                 'user_id': user_id,
                 'status': status,
-                'last_sync': datetime.now().isoformat(),
+                'last_sync': datetime.now(timezone.utc).isoformat(),
                 'next_sync': next_sync.isoformat() if next_sync else None,
                 'error_message': error_message,
                 'orders_synced': orders_synced,
                 'sync_type': sync_type
             }
             
-            await cache.set(cache_key, status_data, expire=3600 * 24)  # 24 hours
+            await cache.set(cache_key, status_data, ttl=3600 * 24)  # 24 hours
             
         except Exception as e:
             logger.error(f"Error updating sync status for user {user_id}: {e}")

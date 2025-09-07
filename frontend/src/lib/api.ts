@@ -514,12 +514,12 @@ export async function getOptionsOrders(params?: {
   return {
     data: response.data || [],
     pagination: {
-      page: response.page || 1,
-      limit: response.limit || 50,
-      total: response.total || 0,
-      total_pages: response.total_pages || 1,
-      has_next: response.has_next || false,
-      has_prev: response.has_prev || false
+      page: response.pagination?.page || 1,
+      limit: response.pagination?.limit || 50,
+      total: response.pagination?.total || 0,
+      total_pages: response.pagination?.total_pages || 1,
+      has_next: response.pagination?.has_next || false,
+      has_prev: response.pagination?.has_prev || false
     },
     filters_applied: response.filters_applied || {},
     data_source: response.data_source || 'database'
@@ -635,6 +635,7 @@ export async function getRolledOptionsChains(params?: {
   min_rolls?: number
   page?: number
   limit?: number
+  use_database?: boolean
 }): Promise<RolledOptionsResponse> {
   const queryParams = new URLSearchParams()
   if (params?.days_back) queryParams.append('days_back', params.days_back.toString())
@@ -643,6 +644,8 @@ export async function getRolledOptionsChains(params?: {
   if (params?.min_rolls) queryParams.append('min_rolls', params.min_rolls.toString())
   if (params?.page) queryParams.append('page', params.page.toString())
   if (params?.limit) queryParams.append('limit', params.limit.toString())
+  // Default to using database detection
+  queryParams.append('use_database', params?.use_database !== false ? 'true' : 'false')
   
   const url = `/rolled-options-v2/chains${queryParams.toString() ? '?' + queryParams.toString() : ''}`
   
@@ -1046,6 +1049,29 @@ export async function triggerOptionsOrdersSync(
   const response = await apiPostRequest<ApiResponse<{ orders_processed: number; orders_stored: number; sync_time: string; sync_type: string }>>(url, {})
   if (!response.data) {
     throw new ApiError(500, 'No sync response received')
+  }
+  return response.data
+}
+
+// Rolled Options Sync API
+export async function triggerRolledOptionsSync(
+  forceFullSync = false
+): Promise<{ message: string; user_id: string; force_full_sync: boolean; estimated_completion: string; status: string }> {
+  const queryParams = new URLSearchParams()
+  if (forceFullSync) queryParams.append('force_full_sync', 'true')
+  
+  const url = `/rolled-options-v2/sync${queryParams.toString() ? '?' + queryParams.toString() : ''}`
+  const response = await apiPostRequest<ApiResponse<{ message: string; user_id: string; force_full_sync: boolean; estimated_completion: string; status: string }>>(url, {})
+  if (!response.data) {
+    throw new ApiError(500, 'No sync response received')
+  }
+  return response.data
+}
+
+export async function getRolledOptionsSyncStatus(): Promise<{ status: string; last_processed?: string; last_successful?: string; data_age_minutes?: number }> {
+  const response = await apiRequest<ApiResponse<{ status: string; last_processed?: string; last_successful?: string; data_age_minutes?: number }>>('/rolled-options-v2/status')
+  if (!response.data) {
+    throw new ApiError(500, 'No sync status data received')
   }
   return response.data
 }

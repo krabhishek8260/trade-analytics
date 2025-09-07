@@ -11,12 +11,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 import logging
+import asyncio
 
 from app.core.database import get_db
 from app.models.user import User
 from app.services.robinhood_service import RobinhoodService
 from app.services.rolled_options_service import RolledOptionsService
 from app.services.json_rolled_options_service import JsonRolledOptionsService
+from app.services.options_order_service import OptionsOrderService
+from app.services.rolled_options_chain_detector import RolledOptionsChainDetector
 from app.schemas.common import DataResponse, ListResponse, ErrorResponse
 
 logger = logging.getLogger(__name__)
@@ -37,13 +40,19 @@ def get_json_rolled_options_service() -> JsonRolledOptionsService:
     """Dependency to get JSON-based rolled options service instance"""
     return JsonRolledOptionsService()
 
+
+def get_database_chain_detector(rh_service: RobinhoodService = Depends(get_robinhood_service)) -> RolledOptionsChainDetector:
+    """Dependency to get database-first chain detector with strategy code support"""
+    options_service = OptionsOrderService(rh_service)
+    return RolledOptionsChainDetector(options_service)
+
 async def get_authenticated_user_id(rh_service: RobinhoodService = Depends(get_robinhood_service)) -> str:
     """Get user ID for authenticated Robinhood user, create user if doesn't exist"""
     try:
         # Check if user is authenticated
         if not await rh_service.is_logged_in():
-            # Return demo user for non-authenticated requests
-            return "00000000-0000-0000-0000-000000000001"
+            # Return the real user with data for testing
+            return "13461768-f848-4c04-aea2-46817bc9a3a5"
         
         # Get Robinhood user ID from API
         robinhood_user_id = rh_service.get_robinhood_user_id()
@@ -51,7 +60,7 @@ async def get_authenticated_user_id(rh_service: RobinhoodService = Depends(get_r
             # Fallback to username-based lookup
             username = rh_service.get_username()
             if not username:
-                return "00000000-0000-0000-0000-000000000001"
+                return "13461768-f848-4c04-aea2-46817bc9a3a5"
             
             # Find or create user in database by username
             async for db in get_db():
@@ -130,8 +139,8 @@ async def get_authenticated_user_id(rh_service: RobinhoodService = Depends(get_r
             
     except Exception as e:
         logger.error(f"Error getting authenticated user: {str(e)}")
-        # Fallback to demo user on error
-        return "00000000-0000-0000-0000-000000000001"
+        # Fallback to real user on error
+        return "13461768-f848-4c04-aea2-46817bc9a3a5"
 
 @router.get(
     "/chains",
@@ -150,9 +159,11 @@ async def get_rolled_options_chains(
     min_rolls: Optional[int] = Query(None, ge=1, description="Minimum number of rolls in chain"),
     page: int = Query(1, ge=1, description="Page number for pagination"),
     limit: int = Query(50, ge=10, le=200, description="Number of chains per page"),
-    use_json: bool = Query(True, description="Use JSON-based analysis (more accurate)"),
+    use_json: bool = Query(False, description="Use JSON-based analysis (legacy)"),
+    use_database: bool = Query(True, description="Use database-first analysis with strategy codes (recommended)"),
     json_service: JsonRolledOptionsService = Depends(get_json_rolled_options_service),
     optimized_service: RolledOptionsService = Depends(get_optimized_rolled_options_service),
+    chain_detector: RolledOptionsChainDetector = Depends(get_database_chain_detector),
     user_id: str = Depends(get_authenticated_user_id)
 ):
     """
@@ -182,8 +193,67 @@ async def get_rolled_options_chains(
     - Performance metrics and summary statistics
     """
     try:
-        if use_json:
-            # Use JSON-based analysis for more accurate roll detection
+        if use_database:
+            # Use new database-first analysis with strategy code detection
+            logger.info(f"Using database-first chain detection with strategy codes for days_back={days_back}, symbol={symbol}")
+            
+            try:
+                chains = await chain_detector.detect_chains_from_database(
+                    user_id=user_id,
+                    days_back=days_back,
+                    symbol=symbol
+                )
+                
+                # Filter by status if specified
+                if status:
+                    chains = [chain for chain in chains if chain.get("status", "").lower() == status.lower()]
+                
+                # Filter by minimum rolls if specified
+                if min_rolls:
+                    chains = [chain for chain in chains if chain.get("total_orders", 0) >= min_rolls]
+                
+                # Apply pagination
+                total_chains = len(chains)
+                start_idx = (page - 1) * limit
+                end_idx = start_idx + limit
+                paginated_chains = chains[start_idx:end_idx]
+                
+                result = {
+                    "success": True,
+                    "message": f"Found {total_chains} chains using database detection",
+                    "data": {
+                        "chains": paginated_chains,
+                        "pagination": {
+                            "page": page,
+                            "limit": limit,
+                            "total": total_chains,
+                            "pages": (total_chains + limit - 1) // limit
+                        },
+                        "summary": {
+                            "total_chains": total_chains,
+                            "strategy_code_chains": len([c for c in chains if c.get("detection_method") == "strategy_code"]),
+                            "heuristic_chains": len([c for c in chains if c.get("detection_method") == "heuristic"]),
+                            "form_source_chains": len([c for c in chains if c.get("detection_method") == "form_source"])
+                        }
+                    }
+                }
+                
+            except Exception as e:
+                logger.error(f"Database detection failed: {str(e)}, falling back to legacy service")
+                # Fallback to legacy service
+                result = await optimized_service.get_rolled_options_chains_optimized(
+                    user_id=user_id,
+                    days_back=days_back,
+                    symbol=symbol,
+                    status=status,
+                    min_orders=min_rolls * 2 + 1 if min_rolls else 2,
+                    page=page,
+                    limit=limit,
+                    use_cache=True
+                )
+                
+        elif use_json:
+            # Use JSON-based analysis for legacy support
             logger.info(f"Using JSON-based rolled options analysis for days_back={days_back}, symbol={symbol}")
             
             try:
@@ -211,8 +281,8 @@ async def get_rolled_options_chains(
                     use_cache=True
                 )
         else:
-            # Fallback to optimized service with database analysis
-            logger.info(f"Using database-based rolled options service for days_back={days_back}, user={user_id}")
+            # Fallback to legacy optimized service 
+            logger.info(f"Using legacy database-based rolled options service for days_back={days_back}, user={user_id}")
             
             result = await optimized_service.get_rolled_options_chains_optimized(
                 user_id=user_id,
@@ -316,7 +386,7 @@ async def get_rolled_options_chain_details(
     try:
         # Use optimized service to get all chains (no pagination)
         result = await optimized_service.get_rolled_options_chains_optimized(
-            user_id="00000000-0000-0000-0000-000000000001", # Demo user for now
+            user_id="13461768-f848-4c04-aea2-46817bc9a3a5", # Real user with data
             days_back=1095, 
             page=1, 
             limit=10000
@@ -376,7 +446,7 @@ async def get_rolled_options_summary(
     try:
         # Use optimized service to get summary from cached data
         result = await optimized_service.get_rolled_options_chains_optimized(
-            user_id="00000000-0000-0000-0000-000000000001",  # Demo user for summary
+            user_id="13461768-f848-4c04-aea2-46817bc9a3a5",  # Real user for summary
             days_back=days_back,
             page=1,
             limit=10000,  # Get all data for summary
@@ -425,7 +495,7 @@ async def get_symbol_rolled_chains(
     try:
         # Use optimized service with symbol filtering
         result = await optimized_service.get_rolled_options_chains_optimized(
-            user_id="00000000-0000-0000-0000-000000000001",  # Demo user
+            user_id="13461768-f848-4c04-aea2-46817bc9a3a5",  # Real user
             days_back=days_back,
             symbol=symbol,  # Pass symbol filter to optimized service
             status=status,

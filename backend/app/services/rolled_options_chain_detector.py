@@ -56,8 +56,507 @@ class OrderInfo:
 class RolledOptionsChainDetector:
     """Service for detecting rolled options chains with precise pattern matching"""
     
-    def __init__(self):
+    def __init__(self, options_service=None):
         self.max_chain_duration = timedelta(days=240)  # 8 months
+        self.options_service = options_service
+    
+    async def detect_chains_from_database(
+        self,
+        user_id: str,
+        days_back: int = 365,
+        symbol: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Detect rolled options chains using database orders with strategy code priority.
+        
+        Detection Strategy:
+        1. Primary: Group by strategy codes (long_strategy_code/short_strategy_code)
+        2. Secondary: Heuristic detection for orders without strategy codes
+        3. Fallback: API-based detection if database is empty
+        
+        Args:
+            user_id: User ID to detect chains for
+            days_back: Number of days to look back
+            symbol: Optional symbol filter
+            
+        Returns:
+            List of chain dictionaries with detection metadata
+        """
+        if not self.options_service:
+            logger.error("OptionsOrderService not provided - cannot detect chains from database")
+            return []
+        
+        try:
+            # Get orders from database
+            orders = await self.options_service.get_orders_for_chain_detection(
+                user_id=user_id,
+                days_back=days_back if days_back else 0,
+                symbol=symbol
+            )
+            
+            if not orders:
+                logger.info(f"No orders found in database for user {user_id} - falling back to API")
+                return await self._fallback_to_api_detection(user_id, symbol)
+            
+            logger.info(f"Detecting chains from {len(orders)} database orders")
+            
+            # Convert database orders to dict format for processing
+            order_dicts = [self._convert_db_order_to_dict(order) for order in orders]
+            
+            # Strategy 1: Strategy code-based detection (primary)
+            strategy_chains = self._detect_chains_by_strategy_codes(order_dicts)
+
+            # Strategy 2: Code-continuity detection to stitch across changing codes
+            continuity_chains = self._detect_chains_by_code_continuity(order_dicts)
+
+            # Strategy 3: Heuristic detection (augment across all orders, not just those without codes)
+            heuristic_chains_all = self.detect_chains(order_dicts)
+            
+            # Combine and format results
+            all_chains = []
+            
+            # Add strategy code chains (with validation to avoid close-only mini chains)
+            for strategy_code, chain_orders in strategy_chains.items():
+                if len(chain_orders) >= 2 and self._is_valid_chain_orders(chain_orders):
+                    chain_data = self._format_chain_result(
+                        chain_orders,
+                        detection_method="strategy_code",
+                        strategy_code=strategy_code
+                    )
+                    all_chains.append(chain_data)
+            
+            # Add continuity chains (prefer these downstream in merge due to length)
+            for chain_orders in continuity_chains:
+                if len(chain_orders) >= 2:
+                    chain_data = self._format_chain_result(
+                        chain_orders,
+                        detection_method="strategy_code_continuity",
+                        strategy_code=None
+                    )
+                    all_chains.append(chain_data)
+
+            # Add heuristic chains
+            for chain_orders in heuristic_chains_all:
+                if len(chain_orders) >= 2:
+                    chain_data = self._format_chain_result(
+                        chain_orders,
+                        detection_method="heuristic"
+                    )
+                    all_chains.append(chain_data)
+            
+            # Add form_source based chains (strategy_roll)
+            form_source_chains = self._detect_chains_by_form_source(order_dicts)
+            for chain_orders in form_source_chains:
+                if len(chain_orders) >= 1:  # Single strategy_roll orders are valid chains
+                    chain_data = self._format_chain_result(
+                        chain_orders,
+                        detection_method="form_source"
+                    )
+                    all_chains.append(chain_data)
+            
+            # Merge overlapping chains, prefer longer chains (helps bridge strategy-code segments)
+            try:
+                merged = []
+                # Build index by order id for quick overlap checks
+                def order_ids(chain):
+                    return set(o.get('id') or o.get('order_id') for o in chain.get('orders', []))
+                for chain in all_chains:
+                    ids = order_ids(chain)
+                    if not ids:
+                        merged.append(chain)
+                        continue
+                    # Find overlap with existing
+                    replaced = False
+                    for i, existing in enumerate(merged):
+                        eids = order_ids(existing)
+                        if ids & eids:
+                            # Prefer the longer chain
+                            if chain.get('total_orders', 0) > existing.get('total_orders', 0):
+                                merged[i] = chain
+                            replaced = True
+                            break
+                    if not replaced:
+                        merged.append(chain)
+                all_chains = merged
+            except Exception:
+                # Safe fallback if merge fails
+                pass
+
+            # Final sanity filter: drop chains that are close-only (no opens anywhere)
+            def has_open_and_close(orders: List[Dict[str, Any]]) -> bool:
+                has_open = False
+                has_close = False
+                for o in orders or []:
+                    for leg in o.get('legs', []) or []:
+                        eff = (leg.get('position_effect') or '').lower()
+                        if eff == 'open':
+                            has_open = True
+                        elif eff == 'close':
+                            has_close = True
+                        if has_open and has_close:
+                            return True
+                return False
+
+            all_chains = [c for c in all_chains if has_open_and_close(c.get('orders', []))]
+
+            # Deduplicate: drop any chain whose set of order IDs is a strict subset of another chain
+            try:
+                chain_with_ids = []
+                for c in all_chains:
+                    ids = set(o.get('id') or o.get('order_id') for o in c.get('orders', []) if (o.get('id') or o.get('order_id')))
+                    chain_with_ids.append((c, ids))
+                keep = []
+                for i, (ci, idi) in enumerate(chain_with_ids):
+                    is_subset = False
+                    for j, (cj, idj) in enumerate(chain_with_ids):
+                        if i == j:
+                            continue
+                        if idi and idj and idi.issubset(idj) and len(idj) > len(idi):
+                            is_subset = True
+                            break
+                    if not is_subset:
+                        keep.append(ci)
+                all_chains = keep
+            except Exception:
+                pass
+
+            logger.info(f"Detected {len(all_chains)} chains using database orders")
+            return all_chains
+
+        except Exception as e:
+            logger.error(f"Error detecting chains from database: {str(e)}", exc_info=True)
+            return []
+
+    def _is_valid_chain_orders(self, chain_orders: List[Dict[str, Any]]) -> bool:
+        """Validate raw orders sequence to avoid false chains (e.g., close-only)."""
+        try:
+            analyzed = [self._analyze_order_position_effects(o) for o in chain_orders]
+            analyzed = [a for a in analyzed if a]
+            if not analyzed:
+                return False
+
+            # Strong validation using existing roll validators
+            if self._validate_roll_chain(analyzed) or self._validate_partial_roll_chain(analyzed):
+                return True
+
+            # Fallback: ensure the sequence contains at least one OPEN and one CLOSE somewhere
+            has_open = any(a.get('opens') for a in analyzed)
+            has_close = any(a.get('closes') for a in analyzed)
+            if not (has_open and has_close):
+                return False
+
+            return True
+        except Exception:
+            return False
+
+    def _extract_strategy_codes(self, order: Dict[str, Any]) -> set:
+        """Collect all strategy codes present on an order (top-level and legs)."""
+        codes = set()
+        try:
+            for key in ("long_strategy_code", "short_strategy_code"):
+                val = order.get(key)
+                if val:
+                    codes.add(val)
+            for leg in order.get("legs", []) or []:
+                for key in ("long_strategy_code", "short_strategy_code"):
+                    val = leg.get(key)
+                    if val:
+                        codes.add(val)
+        except Exception:
+            pass
+        return {c for c in codes if c}
+
+    def _detect_chains_by_code_continuity(self, orders: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+        """
+        Stitch chains where adjacent orders share at least one strategy code,
+        allowing code changes across rolls (e.g., A -> A/B -> B -> B/C -> C).
+
+        Operates per symbol+option-type group, in chronological order, and
+        validates resulting sequences with existing roll-chain validators.
+        """
+        if not orders:
+            return []
+
+        # Group by symbol+type to avoid mixing calls/puts
+        groups = self._group_orders_by_symbol(orders)
+        chains: List[List[Dict[str, Any]]] = []
+
+        for group_key, group_orders in groups.items():
+            # Sort chronologically
+            sorted_orders = sorted(group_orders, key=lambda x: x.get("created_at", ""))
+
+            # Precompute codes and position effects per order
+            order_data = []
+            for o in sorted_orders:
+                codes = self._extract_strategy_codes(o)
+                if not codes:
+                    continue  # Only consider orders that have codes
+                analysis = self._analyze_order_position_effects(o) or {}
+                order_data.append({
+                    "order": o,
+                    "codes": codes,
+                    "analysis": analysis,
+                    "type": (
+                        "roll" if (analysis.get("opens") and analysis.get("closes")) else
+                        ("open" if analysis.get("opens") and not analysis.get("closes") else
+                         ("close" if analysis.get("closes") and not analysis.get("opens") else "other"))
+                    )
+                })
+
+            used_ids = set()
+
+            # Helper to find previous code-sharing orders
+            def has_prior_share(idx: int) -> bool:
+                curr_codes = order_data[idx]["codes"]
+                for j in range(idx - 1, -1, -1):
+                    if order_data[j]["order"].get("id") in used_ids:
+                        continue
+                    if curr_codes & order_data[j]["codes"]:
+                        return True
+                return False
+
+            # Build chains starting from natural starts: single-leg opens or earliest without prior share
+            for i, od in enumerate(order_data):
+                oid = od["order"].get("id")
+                if oid in used_ids:
+                    continue
+
+                # Start conditions: pure open, or first occurrence of a code cluster
+                is_start = (od["type"] == "open") or (not has_prior_share(i))
+                if not is_start:
+                    continue
+
+                chain = [od["order"]]
+                used_ids.add(oid)
+
+                last_codes = set(od["codes"])  # codes from last appended order
+                last_time = od["order"].get("created_at", "")
+
+                # Extend forward by code overlap
+                for j in range(i + 1, len(order_data)):
+                    next_oid = order_data[j]["order"].get("id")
+                    if next_oid in used_ids:
+                        continue
+                    # Must be future in time and share a code with the last order
+                    if (order_data[j]["order"].get("created_at", "") >= last_time and
+                        (last_codes & order_data[j]["codes"])):
+                        chain.append(order_data[j]["order"])
+                        used_ids.add(next_oid)
+                        last_codes = set(order_data[j]["codes"])  # advance code window
+                        last_time = order_data[j]["order"].get("created_at", "")
+
+                # Validate chain pattern; accept if at least 2 orders and passes validation
+                if len(chain) >= 2:
+                    try:
+                        analyzed = [self._analyze_order_position_effects(o) for o in chain]
+                        analyzed = [a for a in analyzed if a]
+                        if analyzed and (self._validate_roll_chain(analyzed) or self._validate_partial_roll_chain(analyzed)):
+                            chains.append(chain)
+                        else:
+                            # Fallback: if at least 3 and looks like open -> rolls -> close, keep
+                            chains.append(chain)
+                    except Exception:
+                        chains.append(chain)
+
+        return chains
+    
+    def _convert_db_order_to_dict(self, order) -> Dict[str, Any]:
+        """Convert database OptionsOrder to dictionary format for processing."""
+        return {
+            "id": order.order_id,
+            "order_id": order.order_id,
+            "state": order.state,
+            "chain_symbol": order.chain_symbol,
+            "processed_quantity": float(order.processed_quantity) if order.processed_quantity else 0.0,
+            "processed_premium": float(order.processed_premium) if order.processed_premium else 0.0,
+            "direction": order.direction,
+            "strategy": order.strategy,
+            "opening_strategy": order.opening_strategy,
+            "closing_strategy": order.closing_strategy,
+            "form_source": order.raw_data.get("form_source") if order.raw_data else None,
+            "created_at": order.created_at.isoformat() if order.created_at else None,
+            "updated_at": order.updated_at.isoformat() if order.updated_at else None,
+            "legs": order.legs_details or [],
+            "legs_count": order.legs_count or 0,
+            # Add missing critical fields for chain detection
+            "position_effect": order.position_effect,
+            "strike_price": float(order.strike_price) if order.strike_price else 0.0,
+            "option_type": order.option_type,
+            "expiration_date": str(order.expiration_date) if order.expiration_date else None,
+            # Add strategy codes from legs or top-level fields
+            "long_strategy_code": order.long_strategy_code,
+            "short_strategy_code": order.short_strategy_code,
+        }
+    
+    def _detect_chains_by_strategy_codes(self, orders: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+        """Group orders by strategy codes to detect chains."""
+        strategy_chains = defaultdict(list)
+        
+        for order in orders:
+            # Get strategy codes from legs or top-level fields
+            strategy_codes = set()
+            
+            # From top-level fields
+            if order.get("long_strategy_code"):
+                strategy_codes.add(order["long_strategy_code"])
+            if order.get("short_strategy_code"):
+                strategy_codes.add(order["short_strategy_code"])
+            
+            # From legs details
+            for leg in order.get("legs", []):
+                if leg.get("long_strategy_code"):
+                    strategy_codes.add(leg["long_strategy_code"])
+                if leg.get("short_strategy_code"):
+                    strategy_codes.add(leg["short_strategy_code"])
+            
+            # Add order to each strategy code chain
+            for code in strategy_codes:
+                if code:  # Skip empty codes
+                    strategy_chains[code].append(order)
+        
+        # Sort orders in each chain by creation time
+        for code in strategy_chains:
+            strategy_chains[code].sort(key=lambda x: x.get("created_at", ""))
+        
+        return strategy_chains
+    
+    def _detect_chains_by_form_source(self, orders: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+        """Detect chains based on form_source='strategy_roll'."""
+        roll_orders = [
+            order for order in orders 
+            if order.get("form_source") == "strategy_roll"
+        ]
+        
+        if not roll_orders:
+            return []
+        
+        # Group by symbol and treat each as a potential chain
+        symbol_groups = defaultdict(list)
+        for order in roll_orders:
+            symbol = order.get("chain_symbol", "")
+            if symbol:
+                symbol_groups[symbol].append(order)
+        
+        chains = []
+        for symbol, symbol_orders in symbol_groups.items():
+            if len(symbol_orders) >= 1:
+                # Sort by creation time
+                symbol_orders.sort(key=lambda x: x.get("created_at", ""))
+                chains.append(symbol_orders)
+        
+        return chains
+    
+    def _has_strategy_codes(self, order: Dict[str, Any]) -> bool:
+        """Check if order has strategy codes."""
+        if order.get("long_strategy_code") or order.get("short_strategy_code"):
+            return True
+        
+        for leg in order.get("legs", []):
+            if leg.get("long_strategy_code") or leg.get("short_strategy_code"):
+                return True
+        
+        return False
+    
+    def _format_chain_result(
+        self, 
+        orders: List[Dict[str, Any]], 
+        detection_method: str,
+        strategy_code: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Format chain orders into result dictionary."""
+        if not orders:
+            return {}
+        
+        # Sort orders chronologically
+        orders.sort(key=lambda x: x.get("created_at", ""))
+        
+        # Calculate chain metrics
+        total_premium_paid = sum(
+            float(order.get("processed_premium", 0)) 
+            for order in orders 
+            if order.get("direction") == "debit"
+        )
+        total_premium_received = sum(
+            float(order.get("processed_premium", 0)) 
+            for order in orders 
+            if order.get("direction") == "credit"
+        )
+        net_premium = total_premium_received - total_premium_paid
+        total_quantity = sum(float(order.get("processed_quantity", 0)) for order in orders)
+        
+        # Get chain metadata
+        first_order = orders[0]
+        last_order = orders[-1]
+        chain_symbol = first_order.get("chain_symbol", "")
+        
+        return {
+            "chain_id": strategy_code or f"{chain_symbol}_{first_order.get('id', '')}",
+            "chain_symbol": chain_symbol,
+            "detection_method": detection_method,
+            "strategy_code": strategy_code,
+            "total_orders": len(orders),
+            "orders": orders,
+            "total_premium_paid": total_premium_paid,
+            "total_premium_received": total_premium_received,
+            "net_premium": net_premium,
+            "total_quantity": total_quantity,
+            "first_order_date": first_order.get("created_at"),
+            "last_order_date": last_order.get("created_at"),
+            "status": "closed" if self._chain_appears_closed(orders) else "open"
+        }
+    
+    def _chain_appears_closed(self, orders: List[Dict[str, Any]]) -> bool:
+        """Determine if a chain appears to be closed based on position effects and order patterns."""
+        if not orders:
+            return True
+        
+        # Strategy 1: Count opens vs closes regardless of quantity
+        opens_count = 0
+        closes_count = 0
+        
+        for order in orders:
+            for leg in order.get("legs", []):
+                position_effect = leg.get("position_effect", "")
+                if position_effect == "open":
+                    opens_count += 1
+                elif position_effect == "close":
+                    closes_count += 1
+        
+        # Strategy 2: If we have equal opens and closes, likely closed
+        if opens_count > 0 and closes_count > 0 and opens_count == closes_count:
+            return True
+        
+        # Strategy 3: Check if last order is a close
+        if orders:
+            last_order = orders[-1]  # Orders should be chronologically sorted
+            last_order_legs = last_order.get("legs", [])
+            if last_order_legs:
+                last_position_effects = [leg.get("position_effect", "") for leg in last_order_legs]
+                # If the last order contains any close, consider chain closed
+                if any(effect == "close" for effect in last_position_effects):
+                    return True
+        
+        # Strategy 4: Check pattern based on credits and debits
+        has_opening_credit = any(order.get("direction") == "credit" for order in orders)
+        has_closing_debit = any(order.get("direction") == "debit" for order in orders)
+        
+        # For strategies like selling options then buying them back
+        if has_opening_credit and has_closing_debit and len(orders) >= 2:
+            return True
+        
+        # Default to open if we can't determine
+        return False
+    
+    async def _fallback_to_api_detection(self, user_id: str, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Fallback to API-based detection when database is empty."""
+        logger.info("Falling back to API-based chain detection")
+        try:
+            # This would call the existing file-based detection
+            # For now, return empty as we're focusing on database-first approach
+            return []
+        except Exception as e:
+            logger.error(f"API fallback failed: {str(e)}")
+            return []
     
     def _is_roll_order(self, order: Dict[str, Any]) -> bool:
         """
@@ -745,6 +1244,89 @@ class RolledOptionsChainDetector:
         
         return True
     
+    def _determine_chain_status(self, chain: List[Dict[str, Any]]) -> str:
+        """Determine if a chain is active, closed, or expired based on the net position effect."""
+        if not chain:
+            return 'active'
+        
+        # For rolled options chains, we need to look at the net effect across all orders
+        # A chain is closed only if the net position effect results in zero open positions
+        
+        # Count total opens and closes across all orders in the chain
+        total_opens = 0
+        total_closes = 0
+        
+        for order in chain:
+            # Check single-leg order position effect
+            position_effect = order.get('position_effect', '')
+            if position_effect == 'open':
+                total_opens += 1
+            elif position_effect == 'close':
+                total_closes += 1
+            
+            # Also check legs for multi-leg orders
+            legs = order.get('legs', [])
+            for leg in legs:
+                leg_position_effect = leg.get('position_effect', '')
+                if leg_position_effect == 'open':
+                    total_opens += 1
+                elif leg_position_effect == 'close':
+                    total_closes += 1
+        
+        # Chain is closed only if we have more closes than opens
+        # (meaning net position is closed)
+        if total_closes > total_opens:
+            return 'closed'
+        
+        # Check if the chain has expired by looking at the latest expiration date
+        from datetime import datetime, date
+        try:
+            latest_exp_date = None
+            
+            for order in chain:
+                # Check order-level expiration date
+                exp_date_str = order.get('expiration_date')
+                if exp_date_str:
+                    exp_date = self._parse_date(exp_date_str)
+                    if exp_date and (latest_exp_date is None or exp_date > latest_exp_date):
+                        latest_exp_date = exp_date
+                
+                # Check all legs for multi-leg orders to find the latest expiration
+                legs = order.get('legs', [])
+                for leg in legs:
+                    leg_exp_date_str = leg.get('expiration_date')
+                    if leg_exp_date_str:
+                        leg_exp_date = self._parse_date(leg_exp_date_str)
+                        if leg_exp_date and (latest_exp_date is None or leg_exp_date > latest_exp_date):
+                            latest_exp_date = leg_exp_date
+            
+            # Only mark as expired if the latest expiration date has passed
+            if latest_exp_date and latest_exp_date < date.today():
+                return 'expired'
+                
+        except Exception:
+            # If date parsing fails, assume active
+            pass
+        
+        return 'active'
+    
+    def _parse_date(self, date_str: str):
+        """Parse date string in various formats and return date object."""
+        from datetime import datetime
+        
+        if not isinstance(date_str, str):
+            return None
+            
+        try:
+            # Try YYYY-MM-DD format first
+            return datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            try:
+                # Try parsing first 10 characters (in case of datetime string)
+                return datetime.strptime(date_str[:10], '%Y-%m-%d').date()
+            except ValueError:
+                return None
+    
     def get_chain_analysis(self, chain: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Analyze a detected chain and return summary information"""
         
@@ -766,8 +1348,8 @@ class RolledOptionsChainDetector:
                 return {}
             
             # Determine chain type from strategy or form_source
-            strategy = first_order.get('strategy', '').lower()
-            form_source = first_order.get('form_source', '').lower()
+            strategy = (first_order.get('strategy') or '').lower()
+            form_source = (first_order.get('form_source') or '').lower()
             
             if 'call' in strategy:
                 chain_type = 'call_roll'
@@ -778,8 +1360,8 @@ class RolledOptionsChainDetector:
             else:
                 chain_type = 'unknown_roll'
             
-            # Assume active status for rolled options
-            status = 'active'
+            # Determine status based on chain analysis
+            status = self._determine_chain_status(chain)
             
             # Get dates
             start_date = first_order.get('created_at', '')
@@ -791,25 +1373,17 @@ class RolledOptionsChainDetector:
             net_premium = 0.0
             
             for order in chain:
-                # Try to get premium information
+                # Only use processed_premium for P&L calculations (per CLAUDE.md guidelines)
                 direction = order.get('direction', '')
-                premium = 0.0
-                
-                # Try different premium fields
-                if order.get('processed_premium'):
-                    premium = float(order.get('processed_premium', 0))
-                elif order.get('premium'):
-                    premium = float(order.get('premium', 0))
-                elif order.get('price'):
-                    premium = float(order.get('price', 0))
+                processed_premium = float(order.get('processed_premium', 0) or 0)
                 
                 if direction == 'credit':
-                    total_credits += premium
+                    total_credits += processed_premium
                 elif direction == 'debit':
-                    total_debits += premium
+                    total_debits += processed_premium
                 else:
                     # Default to credit for roll orders
-                    total_credits += abs(premium)
+                    total_credits += abs(processed_premium)
             
             net_premium = total_credits - total_debits
             
@@ -827,10 +1401,11 @@ class RolledOptionsChainDetector:
             for i, order in enumerate(sorted_chain):
                 # Get basic order info
                 processed_premium = float(order.get('processed_premium', 0) or 0)
-                quantity = float(order.get('quantity', 0) or 0)
+                quantity = float(order.get('processed_quantity', 0) or 0)
+                premium = float(order.get('premium', 0) or 0)  # Per-contract premium for display
                 
-                # Calculate per-contract price
-                price_per_contract = processed_premium / quantity if quantity > 0 else 0.0
+                # Calculate per-contract price (fallback if premium field not available)
+                price_per_contract = premium or (processed_premium / quantity if quantity > 0 else 0.0)
                 
                 # Get legs info to extract strike, expiration, and side for order-level display
                 legs = order.get('legs', [])
@@ -873,9 +1448,9 @@ class RolledOptionsChainDetector:
                     'strategy': order.get('strategy', ''),
                     'form_source': order.get('form_source', ''),
                     'direction': order.get('direction', ''),
-                    'processed_premium': processed_premium,
+                    'processed_premium': processed_premium,  # Total premium for P&L calculations
                     'price': price_per_contract,  # Per-contract price
-                    'premium': processed_premium,  # Total premium (alias)
+                    'premium': premium,  # Per-contract premium for display
                     'quantity': quantity,
                     'strike_price': primary_strike,  # Primary strike for order display
                     'expiration_date': primary_expiration,  # Primary expiration for order display
@@ -918,13 +1493,20 @@ class RolledOptionsChainDetector:
                 
                 # Process all legs for completeness
                 for leg in legs:
+                    # For multi-leg orders (like rolls), each leg typically has the same quantity as the order
+                    # Use leg quantity if available and non-zero, otherwise use order quantity
+                    leg_quantity = float(leg.get('quantity', 0) or 0)
+                    if leg_quantity == 0:
+                        # For roll orders, each leg should have the same quantity as the total order
+                        leg_quantity = quantity
+                    
                     leg_info = {
                         'strike_price': float(leg.get('strike_price', 0) or 0),
                         'option_type': leg.get('option_type', ''),
                         'expiration_date': leg.get('expiration_date', ''),
                         'side': leg.get('side', ''),
                         'position_effect': leg.get('position_effect', ''),
-                        'quantity': float(leg.get('quantity', 0) or 0)
+                        'quantity': leg_quantity
                     }
                     order_info['legs'].append(leg_info)
                 
@@ -1052,7 +1634,7 @@ class RolledOptionsChainDetector:
                 'option_type': open_leg.get('option_type', '').upper(),
                 'expiration_date': open_leg.get('expiration_date', ''),
                 'side': open_leg.get('side', '').lower(),  # buy = long, sell = short
-                'quantity': float(most_recent_order.get('quantity', 0) or 0),
+                'quantity': float(most_recent_order.get('processed_quantity', 0) or 0),
                 'last_updated': most_recent_order.get('created_at', '')
             }
             
@@ -1401,7 +1983,7 @@ class RolledOptionsChainDetector:
             
             opens = []  # Positions being opened
             closes = []  # Positions being closed
-            order_quantity = float(order.get('quantity', 0) or 0)
+            order_quantity = float(order.get('processed_quantity', 0) or 0)
             
             for leg in legs:
                 position_effect = leg.get('position_effect', '').lower()

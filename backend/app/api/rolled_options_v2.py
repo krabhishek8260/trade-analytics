@@ -27,6 +27,8 @@ from app.models.rolled_options_chain import RolledOptionsChain, UserRolledOption
 from app.services.rolled_options_cron_service import RolledOptionsCronService
 from app.schemas.common import DataResponse, ListResponse, ErrorResponse
 from app.services.robinhood_service import RobinhoodService
+from app.core.security import get_current_user_id
+from app.core.redis import cache
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +45,30 @@ def get_cron_service() -> RolledOptionsCronService:
     return RolledOptionsCronService()
 
 
-async def get_authenticated_user_id() -> str:
-    """Get user ID for authenticated user"""
-    # Return test user directly - in production, this would use proper auth
-    return "123e4567-e89b-12d3-a456-426614174000"
+@router.post(
+    "/cache/expire",
+    response_model=DataResponse,
+    responses={
+        200: {"description": "Cache expired successfully"},
+        500: {"description": "Internal server error", "model": ErrorResponse}
+    }
+)
+async def expire_rolled_options_cache(
+    scope: str = Query("all", regex="^(all|user)$", description="Expire all rolled options cache or only current user"),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Expire Redis caches used for rolled options UI responses."""
+    try:
+        pattern = "rolled_options:*"
+        # Note: current cache keys are hashed and do not embed user_id; clear all for now
+        cleared = await cache.clear_pattern(pattern)
+        return DataResponse(data={
+            "cleared_entries": cleared,
+            "scope": scope
+        })
+    except Exception as e:
+        logger.error(f"Error expiring rolled options cache: {e}")
+        raise HTTPException(status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to expire cache")
 
 
 @router.get(
@@ -66,7 +88,7 @@ async def get_rolled_options_chains(
     limit: int = Query(25, ge=5, le=100, description="Number of chains per page"),
     sort_by: str = Query("last_activity", regex="^(last_activity|net_premium|total_pnl|start_date)$", description="Sort field"),
     sort_order: str = Query("desc", regex="^(asc|desc)$", description="Sort order"),
-    user_id: str = Depends(get_authenticated_user_id),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -259,7 +281,7 @@ async def get_rolled_options_chains(
 )
 async def get_rolled_options_chain_details(
     chain_id: str,
-    user_id: str = Depends(get_authenticated_user_id),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """Get detailed information about a specific rolled options chain"""
@@ -323,7 +345,7 @@ async def get_rolled_options_chain_details(
 )
 async def get_rolled_options_summary(
     symbol: Optional[str] = Query(None, description="Filter by underlying symbol"),
-    user_id: str = Depends(get_authenticated_user_id),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """Get summary statistics for rolled options activity"""
@@ -363,7 +385,7 @@ async def get_rolled_options_summary(
 async def trigger_rolled_options_sync(
     background_tasks: BackgroundTasks,
     force_full_sync: bool = Query(False, description="Force full sync instead of incremental"),
-    user_id: str = Depends(get_authenticated_user_id),
+    user_id: str = Depends(get_current_user_id),
     cron_service: RolledOptionsCronService = Depends(get_cron_service),
     db: AsyncSession = Depends(get_db)
 ):
@@ -420,7 +442,7 @@ async def trigger_rolled_options_sync(
     }
 )
 async def get_rolled_options_status(
-    user_id: str = Depends(get_authenticated_user_id),
+    user_id: str = Depends(get_current_user_id),
     cron_service: RolledOptionsCronService = Depends(get_cron_service)
 ):
     """Get the processing status for rolled options"""

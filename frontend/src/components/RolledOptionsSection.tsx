@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { getRolledOptionsChains, OptionsChain, RolledOptionsResponse, OptionsOrder } from '@/lib/api'
+import { getRolledOptionsChains, OptionsChain, RolledOptionsResponse, OptionsOrder, triggerRolledOptionsSync, getRolledOptionsSyncStatus } from '@/lib/api'
 import { ChainSummary } from './ui/ChainSummary'
 import { SymbolLogo } from './ui/SymbolLogo'
+import OptionsOrderLegs from './options/OptionsOrderLegs'
 
 interface RolledOptionsSectionProps {
   formatCurrency: (value: number) => string
@@ -15,18 +16,58 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expandedChains, setExpandedChains] = useState<Set<string>>(new Set())
+  const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set())
   const [selectedStatus, setSelectedStatus] = useState<'all' | 'active' | 'closed' | 'expired'>('all')
   const [selectedSymbol, setSelectedSymbol] = useState<string>('')
   const [currentPage, setCurrentPage] = useState(1)
-  const [daysBack, setDaysBack] = useState(30) // Default to 30 days for faster loading
+  const [daysBack, setDaysBack] = useState(180) // Default to 180 days for better chain detection
   const [pageSize, setPageSize] = useState(25)
-  const [sectionExpanded, setSectionExpanded] = useState(false)
+  const [sectionExpanded, setSectionExpanded] = useState(true)
+  const [syncing, setSyncing] = useState(false)
+  const [syncStatus, setSyncStatus] = useState<any>(null)
+  const [syncError, setSyncError] = useState<string | null>(null)
 
   useEffect(() => {
     setCurrentPage(1)
     setExpandedChains(new Set()) // Reset expanded chains when filters change
+    setExpandedOrders(new Set()) // Reset expanded orders when filters change
     fetchRolledOptions(1)
+    fetchSyncStatus() // Also fetch sync status when filters change
   }, [selectedStatus, selectedSymbol, daysBack, pageSize])
+
+  const fetchSyncStatus = async () => {
+    try {
+      const status = await getRolledOptionsSyncStatus()
+      setSyncStatus(status)
+    } catch (err) {
+      console.error('Failed to fetch sync status:', err)
+      // Don't show error for sync status failures
+    }
+  }
+
+  const handleSync = async (forceFullSync = false) => {
+    try {
+      setSyncing(true)
+      setSyncError(null)
+      
+      await triggerRolledOptionsSync(forceFullSync)
+      
+      // Refresh sync status after triggering
+      await fetchSyncStatus()
+      
+      // Optionally refresh data after a delay
+      setTimeout(() => {
+        fetchRolledOptions(currentPage)
+        fetchSyncStatus()
+      }, 3000) // Wait 3 seconds for processing to start
+      
+    } catch (err) {
+      console.error('Error triggering sync:', err)
+      setSyncError(err instanceof Error ? err.message : 'Failed to trigger sync')
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   const fetchRolledOptions = async (page: number = 1) => {
     setLoading(true)
@@ -77,6 +118,53 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString()
+  }
+
+  const formatDateTime = (dateStr: string | null) => {
+    if (!dateStr) return 'N/A'
+    return new Date(dateStr).toLocaleString()
+  }
+
+  const toggleOrderExpansion = (orderId: string) => {
+    const newExpanded = new Set(expandedOrders)
+    if (newExpanded.has(orderId)) {
+      newExpanded.delete(orderId)
+    } else {
+      newExpanded.add(orderId)
+    }
+    setExpandedOrders(newExpanded)
+  }
+
+  // Convert OptionsOrder to HistoricalOptionsOrder format for compatibility
+  const convertToHistoricalOrder = (order: OptionsOrder): any => {
+    return {
+      order_id: order.order_id,
+      underlying_symbol: order.underlying_symbol || order.chain_symbol,
+      chain_symbol: order.chain_symbol || order.underlying_symbol,
+      strike_price: order.strike_price,
+      expiration_date: order.expiration_date,
+      option_type: order.option_type,
+      side: order.legs?.[0]?.side || 'buy',
+      transaction_side: order.transaction_side,
+      position_effect: order.position_effect,
+      direction: order.direction,
+      quantity: order.quantity,
+      processed_quantity: order.quantity,
+      price: order.price,
+      premium: order.premium,
+      processed_premium: order.processed_premium || order.premium * order.quantity,
+      processed_premium_direction: order.direction,
+      state: order.state,
+      created_at: order.created_at,
+      updated_at: order.updated_at,
+      type: 'limit',
+      legs_count: order.legs?.length || 1,
+      legs_details: order.legs || [],
+      executions_count: 1,
+      strategy: order.strategy,
+      opening_strategy: order.opening_strategy,
+      closing_strategy: order.closing_strategy
+    }
   }
 
   const uniqueSymbols = rolledOptions?.chains.map(chain => chain.underlying_symbol)
@@ -212,11 +300,11 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
                   className="px-3 py-2 border border-input bg-background rounded-md text-sm"
                 >
                   <option value={7}>7 days</option>
-                  <option value={30}>30 days (recommended)</option>
+                  <option value={30}>30 days</option>
                   <option value={60}>60 days</option>
-                  <option value={90}>90 days (slow)</option>
-                  <option value={180}>180 days (very slow)</option>
-                  <option value={365}>365 days (may timeout)</option>
+                  <option value={90}>90 days</option>
+                  <option value={180}>180 days (recommended)</option>
+                  <option value={365}>365 days (slower)</option>
                 </select>
               </div>
               <div>
@@ -258,12 +346,26 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
                   <option value={100}>100</option>
                 </select>
               </div>
-              <div className="flex items-end">
+              <div className="flex items-end space-x-2">
                 <button
                   onClick={() => fetchRolledOptions(1)}
-                  className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+                  className="px-4 py-2 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 transition-colors"
                 >
                   Refresh
+                </button>
+                <button
+                  onClick={() => handleSync(false)}
+                  disabled={syncing}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {syncing ? 'Syncing...' : 'Sync Chains'}
+                </button>
+                <button
+                  onClick={() => handleSync(true)}
+                  disabled={syncing}
+                  className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {syncing ? 'Syncing...' : 'Full Sync'}
                 </button>
               </div>
             </div>
@@ -279,6 +381,49 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
                 </div>
               )}
             </div>
+
+            {/* Sync Status Indicator */}
+            {(syncStatus || syncError || syncing) && (
+              <div className="mb-4 p-3 rounded-lg border">
+                {syncing && (
+                  <div className="flex items-center text-blue-600 dark:text-blue-400">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                    <span className="text-sm font-medium">Processing rolled options chains...</span>
+                    <span className="text-xs text-muted-foreground ml-2">(2-5 minutes)</span>
+                  </div>
+                )}
+                {syncError && (
+                  <div className="flex items-center text-red-600 dark:text-red-400">
+                    <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                    <span className="text-sm font-medium">Sync Error: {syncError}</span>
+                  </div>
+                )}
+                {syncStatus && !syncing && !syncError && (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center text-green-600 dark:text-green-400">
+                      <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                      <span className="text-sm font-medium">Chains up to date</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {syncStatus.last_successful && (
+                        <span>Last sync: {new Date(syncStatus.last_successful).toLocaleString()}</span>
+                      )}
+                      {syncStatus.data_age_minutes && (
+                        <span className="ml-2">
+                          ({syncStatus.data_age_minutes < 60 
+                            ? `${syncStatus.data_age_minutes}m ago`
+                            : `${Math.round(syncStatus.data_age_minutes / 60)}h ago`})
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Chains List */}
             {rolledOptions.chains.length === 0 ? (
@@ -350,103 +495,125 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
                     {expandedChains.has(chain.chain_id) && (
                       <div className="border-t border-border p-4 bg-background/50">
                         <div className="space-y-4">
-                          {/* Orders History */}
+                          {/* Orders History - using exact OptionsOrderRow format */}
                           <div>
-                            <h4 className="font-medium mb-2">
-                              Orders History ({chain.orders.length})
+                            <h4 className="font-medium mb-4">
+                              Orders in Chain ({chain.orders.length})
                               {chain.status === 'active' && (
                                 <span className="ml-2 text-xs px-2 py-1 rounded bg-green-100 text-green-800">
-                                  ACTIVE CHAIN - DEBUG
+                                  ACTIVE
                                 </span>
                               )}
                             </h4>
-                            <div className="space-y-2">
+                            <div className="space-y-3">
                               {chain.orders.map((order, index) => {
-                                let isLatestPosition = false
+                                const historicalOrder = convertToHistoricalOrder(order)
+                                const isExpanded = expandedOrders.has(order.order_id)
                                 
-                                if (chain.status === 'active') {
-                                  const latestPosition = (chain as any).latest_position || 
-                                                        (chain as any).chain_data?.latest_position ||
-                                                        (chain as any).current_position
-                                  
-                                  if (latestPosition) {
-                                    if (order.roll_details) {
-                                      const openPos = order.roll_details.open_position
-                                      isLatestPosition = openPos && 
-                                        openPos.strike_price === latestPosition.strike_price &&
-                                        openPos.expiration_date === latestPosition.expiration_date &&
-                                        openPos.option_type === latestPosition.option_type
-                                    } else {
-                                      isLatestPosition = order.strike_price === latestPosition.strike_price &&
-                                        order.expiration_date === latestPosition.expiration_date &&
-                                        order.option_type === latestPosition.option_type
-                                    }
-                                  } else {
-                                    const potentialCurrentPositions = chain.orders.map((o, i) => {
-                                      if (o.roll_details) {
-                                        return {
-                                          index: i,
-                                          strike: o.roll_details.open_position.strike_price,
-                                          expiry: o.roll_details.open_position.expiration_date,
-                                          type: o.roll_details.open_position.option_type,
-                                          date: new Date(o.created_at)
-                                        }
-                                      } else if (o.position_effect === 'open') {
-                                        return {
-                                          index: i,
-                                          strike: o.strike_price,
-                                          expiry: o.expiration_date,
-                                          type: o.option_type,
-                                          date: new Date(o.created_at)
-                                        }
-                                      }
-                                      return null
-                                    }).filter(Boolean)
-                                    
-                                    const currentPosition = potentialCurrentPositions.sort((a, b) => 
-                                      (b?.date?.getTime() || 0) - (a?.date?.getTime() || 0)
-                                    )[0]
-                                    
-                                    isLatestPosition = Boolean(currentPosition && index === currentPosition.index)
-                                  }
-                                }
-
                                 return (
-                                  <div key={index} className={`p-3 rounded border ${isLatestPosition ? 'border-green-500 bg-green-50' : 'border-border'}`}>
-                                    <div className="flex justify-between items-start">
+                                  <div key={index} className="bg-gradient-to-r from-card/50 to-card/80 rounded-xl overflow-hidden border border-muted/30 shadow-sm hover:shadow-md transition-all duration-200">
+                                    {/* Order Summary Row */}
+                                    <button
+                                      onClick={() => toggleOrderExpansion(order.order_id)}
+                                      className="w-full p-4 text-left hover:bg-muted/30 transition-all duration-200 flex items-center justify-between group"
+                                    >
                                       <div className="flex-1">
-                                        <div className="flex items-center gap-2 mb-1">
-                                          <span className="text-sm font-medium">
-                                            {order.position_effect === 'open' ? 'OPEN' : 'CLOSE'}
-                                          </span>
-                                          {isLatestPosition && (
-                                            <span className="text-xs px-2 py-1 rounded bg-green-100 text-green-800">
-                                              CURRENT
-                                            </span>
-                                          )}
-                                          {order.roll_details && (
-                                            <span className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-800">
+                                        <div className="flex items-center mb-2">
+                                          <SymbolLogo 
+                                            symbol={order.chain_symbol || order.underlying_symbol}
+                                            size="sm" 
+                                            showText={true}
+                                            className="font-semibold text-base"
+                                          />
+                                        </div>
+                                        
+                                        <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                                          {/* Action Badge - Show ROLL if roll_details exists, otherwise show side + position_effect */}
+                                          {order.roll_details ? (
+                                            <span className="text-xs px-2 py-0.5 rounded font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">
                                               ROLL
                                             </span>
+                                          ) : (historicalOrder.side || order.legs?.[0]?.side) && (
+                                            <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                                              (historicalOrder.side || order.legs?.[0]?.side)?.toLowerCase() === 'buy'
+                                                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                                                : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
+                                            }`}>
+                                              {(historicalOrder.side || order.legs?.[0]?.side)?.toUpperCase()} {(order.position_effect || order.legs?.[0]?.position_effect)?.toUpperCase()}
+                                            </span>
                                           )}
+                                          
+                                          {/* Contracts Badge */}
+                                          {order.quantity && (
+                                            <span className="text-xs px-2 py-0.5 rounded font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+                                              {order.quantity} contracts
+                                            </span>
+                                          )}
+                                          
+                                          {/* Strike Price Badge */}
+                                          {order.strike_price && (
+                                            <span className="text-xs px-2 py-0.5 rounded font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
+                                              ${order.strike_price} {order.option_type?.toUpperCase()}
+                                            </span>
+                                          )}
+                                          
+                                          {/* Expiration Badge */}
+                                          {(order.expiration_date || order.legs?.[0]?.expiration_date) && (
+                                            <span className="text-xs px-2 py-0.5 rounded font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">
+                                              {order.expiration_date || order.legs?.[0]?.expiration_date}
+                                            </span>
+                                          )}
+                                          
+                                          {/* Strategy Badge */}
+                                          {order.strategy && (
+                                            <span className="text-xs px-2 py-0.5 rounded font-medium bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300">
+                                              {order.strategy}
+                                            </span>
+                                          )}
+                                          
+                                          {/* Legs Badge */}
+                                          <span className="text-xs px-2 py-0.5 rounded font-medium bg-slate-100 text-slate-800 dark:bg-slate-900/30 dark:text-slate-300">
+                                            {order.legs?.length || 1} {(order.legs?.length || 1) === 1 ? 'leg' : 'legs'}
+                                          </span>
                                         </div>
-                                        <div className="text-sm">
-                                          {order.quantity} {order.option_type.toUpperCase()} {order.strike_price} @ {formatDate(order.expiration_date)}
-                                        </div>
-                                        <div className="text-sm text-muted-foreground">
-                                          {order.quantity} contracts @ {formatCurrency(order.price)}
+                                        
+                                        <div className="text-xs text-muted-foreground mt-1">
+                                          {formatDateTime(order.created_at)}
                                         </div>
                                       </div>
-                                      <div>
-                                        <div className="text-muted-foreground text-xs mb-1">STATUS</div>
-                                        <div className="capitalize">
-                                          {order.state}
+                                      
+                                      <div className="text-right space-y-1">
+                                        <div className={`font-bold text-lg ${
+                                          (order.direction === 'credit' ? 1 : -1) * (order.processed_premium || order.premium * order.quantity || 0) >= 0 
+                                            ? 'text-green-600 dark:text-green-400' 
+                                            : 'text-red-600 dark:text-red-400'
+                                        }`}>
+                                          {order.direction === 'credit' ? '+' : '-'}{formatCurrency(order.processed_premium || order.premium * order.quantity || 0)}
                                         </div>
                                         <div className="text-xs text-muted-foreground">
-                                          {order.strategy || 'Single Leg'}
+                                          {formatCurrency((order.processed_premium || order.premium * order.quantity || 0) / Math.max(order.quantity || 1, 1))}/contract
                                         </div>
                                       </div>
-                                    </div>
+                                      
+                                      <svg
+                                        className={`w-5 h-5 ml-3 transition-all duration-200 group-hover:scale-110 ${
+                                          isExpanded ? 'rotate-180' : ''
+                                        }`}
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                      >
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m19 9-7 7-7-7" />
+                                      </svg>
+                                    </button>
+                                    
+                                    {/* Expanded Details */}
+                                    {isExpanded && (
+                                      <OptionsOrderLegs 
+                                        order={historicalOrder}
+                                        formatCurrency={formatCurrency}
+                                      />
+                                    )}
                                   </div>
                                 )
                               })}

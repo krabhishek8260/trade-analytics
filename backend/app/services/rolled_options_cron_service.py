@@ -24,6 +24,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, func, and_, or_, text
 from sqlalchemy.dialects.postgresql import insert
+import uuid
 
 from app.core.database import get_db
 from app.models.user import User
@@ -40,7 +41,14 @@ class RolledOptionsCronService:
     """Background service for processing rolled options chains"""
     
     def __init__(self):
-        self.chain_detector = RolledOptionsChainDetector()
+        # Initialize services for chain detection
+        from app.services.robinhood_service import RobinhoodService
+        from app.services.options_order_service import OptionsOrderService
+        
+        rh_service = RobinhoodService()
+        options_service = OptionsOrderService(rh_service)
+        self.options_service = options_service  # keep reference to run order syncs
+        self.chain_detector = RolledOptionsChainDetector(options_service)
         self.json_service = JsonRolledOptionsService()
         self.processing_timeout = 300  # 5 minutes per user
         self.max_retries = 3
@@ -172,6 +180,34 @@ class RolledOptionsCronService:
         full_sync = user_info.get('full_sync_required', True)
         
         try:
+            # Ensure the user exists in the DB to satisfy FK constraints when storing chains
+            async for db in get_db():
+                try:
+                    user_uuid = uuid.UUID(user_id)
+                    user_exists = await db.execute(
+                        select(User).where(User.id == user_uuid)
+                    )
+                    if not user_exists.scalar_one_or_none():
+                        # Create a minimal user record
+                        from sqlalchemy.dialects.postgresql import insert as pg_insert
+                        dummy_email = f"user_{user_id[:8]}@tradeanalytics.local"
+                        dummy_name = "TradeAnalytics User"
+                        insert_stmt = pg_insert(User).values(
+                            id=user_uuid,
+                            email=dummy_email,
+                            full_name=dummy_name,
+                            is_active=True,
+                            robinhood_username=None,
+                            robinhood_user_id=None
+                        ).on_conflict_do_nothing(index_elements=[User.id])
+                        await db.execute(insert_stmt)
+                        await db.commit()
+                        logger.info(f"Ensured user exists for rolled options processing: {user_id}")
+                except Exception as e:
+                    logger.warning(f"Could not ensure user exists ({user_id}): {e}")
+                finally:
+                    break
+
             # Determine date range for processing
             if full_sync:
                 # Full sync - process all available data
@@ -197,17 +233,24 @@ class RolledOptionsCronService:
                     'chains_processed': 0
                 }
             
-            # Detect chains using the chain detector with enhanced backward tracing
-            detected_chains = self.chain_detector.detect_chains(orders_data)
-            logger.info(f"🔍 Enhanced chain detection found {len(detected_chains)} chains for user {user_id}")
+            # Use RolledOptionsChainDetector (database-first + heuristics) to detect chains
+            # For full sync, fetch all available orders (no lookback limit)
+            detection_days = None if full_sync else days_back
+            chains = await self.chain_detector.detect_chains_from_database(
+                user_id=user_id,
+                days_back=detection_days if detection_days is not None else 0,  # passed through; service handles None/0 as all
+                symbol=None
+            )
+            logger.info(f"🔍 Detector returned {len(chains)} chains for user {user_id}")
             
             # Count enhanced chains (those starting with single-leg opening orders)
             enhanced_chain_count = 0
-            for chain_orders in detected_chains:
-                if chain_orders and len(chain_orders) > 0:
+            for chain in chains:
+                chain_orders = chain.get('orders', [])
+                if chain_orders:
                     first_order = chain_orders[0]
                     legs = first_order.get('legs', [])
-                    if len(legs) == 1 and legs[0].get('position_effect') == 'open':
+                    if len(legs) == 1 and (legs[0] or {}).get('position_effect') == 'open':
                         enhanced_chain_count += 1
             
             logger.info(f"🎉 Found {enhanced_chain_count} enhanced chains starting with single-leg opening orders")
@@ -230,14 +273,16 @@ class RolledOptionsCronService:
                         logger.info(f"Cleared existing chains for user {user_id} (full sync)")
                     
                     # Process each detected chain with individual error handling
-                    for i, chain_orders in enumerate(detected_chains):
+                    for i, chain_data in enumerate(chains):
                         try:
-                            logger.debug(f"Processing chain {i+1}/{len(detected_chains)} with {len(chain_orders)} orders")
+                            chain_orders = chain_data.get('orders', [])
+                            logger.debug(f"Processing chain {i+1}/{len(chains)} with {len(chain_orders)} orders")
                             
+                            # Normalize into full analysis for storage
                             chain_analysis = self.chain_detector.get_chain_analysis(chain_orders)
                             
                             if chain_analysis and chain_analysis.get('chain_id'):
-                                logger.info(f"Chain {i+1}/{len(detected_chains)}: {chain_analysis.get('chain_id')} - {len(chain_orders)} orders")
+                                logger.info(f"Chain {i+1}/{len(chains)}: {chain_analysis.get('chain_id')} - {len(chain_orders)} orders")
                                 
                                 # Store chain in database (has its own error handling)
                                 await self._store_chain(db, user_id, chain_analysis)
@@ -271,6 +316,13 @@ class RolledOptionsCronService:
                         orders_processed=len(orders_data)
                     )
                     
+                    # Expire Redis caches so UI reflects fresh chains immediately
+                    try:
+                        cleared = await cache.clear_pattern("rolled_options:*")
+                        logger.info(f"Cleared {cleared} rolled_options* Redis keys after processing user {user_id}")
+                    except Exception as e:
+                        logger.warning(f"Could not clear rolled_options Redis cache: {e}")
+                    
                     logger.info(f"Successfully stored {chains_stored} chains for user {user_id}")
                     
                     return {
@@ -296,25 +348,35 @@ class RolledOptionsCronService:
     
     async def _load_user_orders(self, user_id: str, days_back: int) -> List[Dict[str, Any]]:
         """
-        Load orders for chain detection - uses extended lookback for enhanced backward tracing
+        Load orders for chain detection - uses database as primary data source
         """
         try:
+            # Primary: Load from database (production)
+            logger.info(f"🔍 Loading orders from database for enhanced detection (user: {user_id}, days_back: {days_back})")
+            
             # For enhanced detection, load with extended lookback to find historical opening orders
             extended_days_back = max(days_back, 365)  # At least 1 year of data for backward tracing
             
-            # Try debug files first (development)
-            orders = await self._load_orders_from_debug_files()
-            if orders:
-                logger.info(f"🔍 Loaded {len(orders)} orders from debug files for enhanced detection")
-                return orders
+            database_orders = await self._load_orders_from_database(user_id, extended_days_back)
+            if database_orders:
+                logger.info(f"🔍 Loaded {len(database_orders)} orders from database for enhanced detection")
+                return database_orders
             
-            # Production: Load from JSON service with extended lookback
-            logger.info(f"🔍 Loading orders with extended lookback ({extended_days_back} days) for enhanced detection")
+            # Fallback 1: Try debug files (development/testing)
+            logger.warning("No orders found in database, trying debug files as fallback")
+            debug_orders = await self._load_orders_from_debug_files()
+            if debug_orders:
+                logger.info(f"🔍 Loaded {len(debug_orders)} orders from debug files for enhanced detection")
+                return debug_orders
+            
+            # Fallback 2: Load from JSON service (API)
+            logger.warning("No orders in debug files, falling back to API loading")
+            logger.info(f"🔍 Loading orders from API with extended lookback ({extended_days_back} days)")
             result = await self.json_service._load_raw_orders(extended_days_back)
             
             if result.get('success') and result.get('orders'):
                 orders = result['orders']
-                logger.info(f"Loaded {len(orders)} raw orders for enhanced detection")
+                logger.info(f"Loaded {len(orders)} raw orders from API for enhanced detection")
                 
                 # Filter for filled options orders only
                 options_orders = [
@@ -323,11 +385,11 @@ class RolledOptionsCronService:
                         order.get('state', '').lower() == 'filled')
                 ]
                 
-                logger.info(f"Filtered to {len(options_orders)} filled options orders")
+                logger.info(f"Filtered to {len(options_orders)} filled options orders from API")
                 return options_orders
             
-            # Fallback to regular loading if extended loading fails
-            logger.warning("Extended loading failed, falling back to regular loading")
+            # Final fallback with shorter timeframe
+            logger.warning("Extended API loading failed, falling back to regular API loading")
             result = await self.json_service._load_raw_orders(days_back)
             
             if result.get('success') and result.get('orders'):
@@ -343,6 +405,105 @@ class RolledOptionsCronService:
             
         except Exception as e:
             logger.error(f"Error loading orders for user {user_id}: {e}")
+            return []
+
+    async def _load_orders_from_database(self, user_id: str, days_back: int) -> List[Dict[str, Any]]:
+        """
+        Load orders from the database options_orders table
+        """
+        try:
+            async for db in get_db():
+                # Calculate cutoff date
+                from datetime import datetime, timedelta
+                cutoff_date = datetime.now() - timedelta(days=days_back)
+                
+                # Query filled options orders from the database
+                result = await db.execute(text('''
+                    SELECT 
+                        order_id,
+                        chain_symbol,
+                        strike_price,
+                        expiration_date,
+                        option_type,
+                        state,
+                        created_at,
+                        updated_at,
+                        position_effect,
+                        processed_premium,
+                        direction,
+                        legs_count,
+                        legs_details,
+                        strategy,
+                        opening_strategy,
+                        closing_strategy
+                    FROM options_orders 
+                    WHERE user_id = :user_id
+                    AND state = 'filled'
+                    AND legs_count > 0
+                    AND created_at >= :cutoff_date
+                    ORDER BY created_at DESC
+                '''), {
+                    'user_id': user_id,
+                    'cutoff_date': cutoff_date
+                })
+                
+                db_orders = result.fetchall()
+                logger.info(f"Found {len(db_orders)} filled options orders in database for user {user_id}")
+                
+                # Convert database orders to the expected format for chain detection
+                converted_orders = []
+                
+                for db_order in db_orders:
+                    # Convert to the format expected by chain detector
+                    order_dict = {
+                        'id': db_order.order_id,
+                        'state': db_order.state,
+                        'created_at': db_order.created_at.isoformat() if db_order.created_at else None,
+                        'updated_at': db_order.updated_at.isoformat() if db_order.updated_at else None,
+                        'direction': db_order.direction,
+                        'premium': float(db_order.processed_premium or 0),
+                        'processed_premium': float(db_order.processed_premium or 0),
+                        'strategy': db_order.strategy,
+                        'opening_strategy': db_order.opening_strategy,
+                        'closing_strategy': db_order.closing_strategy,
+                        # Helpful fields for detector grouping/validation
+                        'chain_symbol': db_order.chain_symbol,
+                        'underlying_symbol': db_order.chain_symbol,
+                        'processed_quantity': float(getattr(db_order, 'processed_quantity', 0) or 0),
+                        'legs': []
+                    }
+                    
+                    # Convert legs_details from database format
+                    if db_order.legs_details:
+                        legs = db_order.legs_details if isinstance(db_order.legs_details, list) else []
+                        for leg in legs:
+                            # Provide per-leg fields directly for detector logic
+                            strike = leg.get('strike_price', None)
+                            try:
+                                strike_val = float(strike) if strike is not None else None
+                            except Exception:
+                                strike_val = None
+                            leg_dict = {
+                                'id': leg.get('id'),
+                                'side': leg.get('side'),
+                                'position_effect': leg.get('position_effect'),
+                                'option_type': leg.get('option_type') or (db_order.option_type if db_order.option_type else None),
+                                'strike_price': strike_val if strike_val is not None else (float(db_order.strike_price) if db_order.strike_price is not None else None),
+                                'expiration_date': leg.get('expiration_date') or (str(db_order.expiration_date) if db_order.expiration_date else None),
+                                'long_strategy_code': leg.get('long_strategy_code'),
+                                'short_strategy_code': leg.get('short_strategy_code')
+                            }
+                            order_dict['legs'].append(leg_dict)
+                    
+                    # Only include orders with legs (options orders)
+                    if order_dict['legs']:
+                        converted_orders.append(order_dict)
+                
+                logger.info(f"Converted {len(converted_orders)} database orders to chain detection format")
+                return converted_orders
+                
+        except Exception as e:
+            logger.error(f"Error loading orders from database for user {user_id}: {e}")
             return []
 
     async def _load_orders_from_debug_files(self) -> List[Dict[str, Any]]:

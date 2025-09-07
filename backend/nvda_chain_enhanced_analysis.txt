@@ -1,0 +1,1398 @@
+Searching for NVDA orders with strategy code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+================================================================================
+Found 50 NVDA orders with strategy code c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+================================================================================
+
+🔸 ORDER 1/50
+Order ID: 6798f56d-2e9b-4ff0-aefd-d15aa1a1b74f
+Created: 2025-01-28T15:19:09.332766Z
+Updated: 2025-01-28T15:19:12.931864Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: option_chain
+Processed Premium: $3155
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $31.55000000 x 1.00000 at 2025-01-28T15:19:12.685000Z
+------------------------------------------------------------
+
+🔸 ORDER 2/50
+Order ID: 6798f56d-2e9b-4ff0-aefd-d15aa1a1b74f
+Created: 2025-01-28T15:19:09.332766Z
+Updated: 2025-01-28T15:19:12.931864Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: option_chain
+Processed Premium: $3155
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $31.55000000 x 1.00000 at 2025-01-28T15:19:12.685000Z
+------------------------------------------------------------
+
+🔸 ORDER 3/50
+Order ID: 6798f56d-2e9b-4ff0-aefd-d15aa1a1b74f
+Created: 2025-01-28T15:19:09.332766Z
+Updated: 2025-01-28T15:19:12.931864Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: option_chain
+Processed Premium: $3155
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $31.55000000 x 1.00000 at 2025-01-28T15:19:12.685000Z
+------------------------------------------------------------
+
+🔸 ORDER 4/50
+Order ID: 6798f56d-2e9b-4ff0-aefd-d15aa1a1b74f
+Created: 2025-01-28T15:19:09.332766Z
+Updated: 2025-01-28T15:19:12.931864Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: option_chain
+Processed Premium: $3155
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $31.55000000 x 1.00000 at 2025-01-28T15:19:12.685000Z
+------------------------------------------------------------
+
+🔸 ORDER 5/50
+Order ID: 6798f56d-2e9b-4ff0-aefd-d15aa1a1b74f
+Created: 2025-01-28T15:19:09.332766Z
+Updated: 2025-01-28T15:19:12.931864Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: option_chain
+Processed Premium: $3155
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $31.55000000 x 1.00000 at 2025-01-28T15:19:12.685000Z
+------------------------------------------------------------
+
+🔸 ORDER 6/50
+Order ID: 679a419c-6a39-4ebe-8cc6-e228e7111e2a
+Created: 2025-01-29T14:56:28.097234Z
+Updated: 2025-01-29T14:56:28.674295Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: option_chain
+Processed Premium: $3585
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $35.85000000 x 1.00000 at 2025-01-29T14:56:28.417000Z
+------------------------------------------------------------
+
+🔸 ORDER 7/50
+Order ID: 679a419c-6a39-4ebe-8cc6-e228e7111e2a
+Created: 2025-01-29T14:56:28.097234Z
+Updated: 2025-01-29T14:56:28.674295Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: option_chain
+Processed Premium: $3585
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $35.85000000 x 1.00000 at 2025-01-29T14:56:28.417000Z
+------------------------------------------------------------
+
+🔸 ORDER 8/50
+Order ID: 679a419c-6a39-4ebe-8cc6-e228e7111e2a
+Created: 2025-01-29T14:56:28.097234Z
+Updated: 2025-01-29T14:56:28.674295Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: option_chain
+Processed Premium: $3585
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $35.85000000 x 1.00000 at 2025-01-29T14:56:28.417000Z
+------------------------------------------------------------
+
+🔸 ORDER 9/50
+Order ID: 679a419c-6a39-4ebe-8cc6-e228e7111e2a
+Created: 2025-01-29T14:56:28.097234Z
+Updated: 2025-01-29T14:56:28.674295Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: option_chain
+Processed Premium: $3585
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $35.85000000 x 1.00000 at 2025-01-29T14:56:28.417000Z
+------------------------------------------------------------
+
+🔸 ORDER 10/50
+Order ID: 679a419c-6a39-4ebe-8cc6-e228e7111e2a
+Created: 2025-01-29T14:56:28.097234Z
+Updated: 2025-01-29T14:56:28.674295Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: option_chain
+Processed Premium: $3585
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $35.85000000 x 1.00000 at 2025-01-29T14:56:28.417000Z
+------------------------------------------------------------
+
+🔸 ORDER 11/50
+Order ID: 679a6f60-89e7-43ab-9647-0ce68664d3b1
+Created: 2025-01-29T18:11:44.488308Z
+Updated: 2025-01-29T18:11:45.379260Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: strategy_detail
+Processed Premium: $3290
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $32.90000000 x 1.00000 at 2025-01-29T18:11:44.895000Z
+------------------------------------------------------------
+
+🔸 ORDER 12/50
+Order ID: 679a6f60-89e7-43ab-9647-0ce68664d3b1
+Created: 2025-01-29T18:11:44.488308Z
+Updated: 2025-01-29T18:11:45.379260Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: strategy_detail
+Processed Premium: $3290
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $32.90000000 x 1.00000 at 2025-01-29T18:11:44.895000Z
+------------------------------------------------------------
+
+🔸 ORDER 13/50
+Order ID: 679a6f60-89e7-43ab-9647-0ce68664d3b1
+Created: 2025-01-29T18:11:44.488308Z
+Updated: 2025-01-29T18:11:45.379260Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: strategy_detail
+Processed Premium: $3290
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $32.90000000 x 1.00000 at 2025-01-29T18:11:44.895000Z
+------------------------------------------------------------
+
+🔸 ORDER 14/50
+Order ID: 679a6f60-89e7-43ab-9647-0ce68664d3b1
+Created: 2025-01-29T18:11:44.488308Z
+Updated: 2025-01-29T18:11:45.379260Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: strategy_detail
+Processed Premium: $3290
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $32.90000000 x 1.00000 at 2025-01-29T18:11:44.895000Z
+------------------------------------------------------------
+
+🔸 ORDER 15/50
+Order ID: 679a6f60-89e7-43ab-9647-0ce68664d3b1
+Created: 2025-01-29T18:11:44.488308Z
+Updated: 2025-01-29T18:11:45.379260Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: strategy_detail
+Processed Premium: $3290
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $32.90000000 x 1.00000 at 2025-01-29T18:11:44.895000Z
+------------------------------------------------------------
+
+🔸 ORDER 16/50
+Order ID: 67a0fded-4cfe-49a0-b2ea-c2ef6d7e0ede
+Created: 2025-02-03T17:33:33.947258Z
+Updated: 2025-02-03T17:33:59.025601Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: option_chain
+Processed Premium: $5810
+Processed Quantity: 2.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $29.05000000 x 2.00000 at 2025-02-03T17:33:58.819000Z
+------------------------------------------------------------
+
+🔸 ORDER 17/50
+Order ID: 67a0fded-4cfe-49a0-b2ea-c2ef6d7e0ede
+Created: 2025-02-03T17:33:33.947258Z
+Updated: 2025-02-03T17:33:59.025601Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: option_chain
+Processed Premium: $5810
+Processed Quantity: 2.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $29.05000000 x 2.00000 at 2025-02-03T17:33:58.819000Z
+------------------------------------------------------------
+
+🔸 ORDER 18/50
+Order ID: 67a0fded-4cfe-49a0-b2ea-c2ef6d7e0ede
+Created: 2025-02-03T17:33:33.947258Z
+Updated: 2025-02-03T17:33:59.025601Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: option_chain
+Processed Premium: $5810
+Processed Quantity: 2.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $29.05000000 x 2.00000 at 2025-02-03T17:33:58.819000Z
+------------------------------------------------------------
+
+🔸 ORDER 19/50
+Order ID: 67a0fded-4cfe-49a0-b2ea-c2ef6d7e0ede
+Created: 2025-02-03T17:33:33.947258Z
+Updated: 2025-02-03T17:33:59.025601Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: option_chain
+Processed Premium: $5810
+Processed Quantity: 2.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $29.05000000 x 2.00000 at 2025-02-03T17:33:58.819000Z
+------------------------------------------------------------
+
+🔸 ORDER 20/50
+Order ID: 67a0fded-4cfe-49a0-b2ea-c2ef6d7e0ede
+Created: 2025-02-03T17:33:33.947258Z
+Updated: 2025-02-03T17:33:59.025601Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: option_chain
+Processed Premium: $5810
+Processed Quantity: 2.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $29.05000000 x 2.00000 at 2025-02-03T17:33:58.819000Z
+------------------------------------------------------------
+
+🔸 ORDER 21/50
+Order ID: 67a25383-22a3-4f11-b5eb-acc6d60e0e0e
+Created: 2025-02-04T17:50:59.856580Z
+Updated: 2025-02-04T17:51:00.472465Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: strategy_detail
+Processed Premium: $3035
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $30.35000000 x 1.00000 at 2025-02-04T17:51:00.246000Z
+------------------------------------------------------------
+
+🔸 ORDER 22/50
+Order ID: 67a25383-22a3-4f11-b5eb-acc6d60e0e0e
+Created: 2025-02-04T17:50:59.856580Z
+Updated: 2025-02-04T17:51:00.472465Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: strategy_detail
+Processed Premium: $3035
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $30.35000000 x 1.00000 at 2025-02-04T17:51:00.246000Z
+------------------------------------------------------------
+
+🔸 ORDER 23/50
+Order ID: 67a25383-22a3-4f11-b5eb-acc6d60e0e0e
+Created: 2025-02-04T17:50:59.856580Z
+Updated: 2025-02-04T17:51:00.472465Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: strategy_detail
+Processed Premium: $3035
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $30.35000000 x 1.00000 at 2025-02-04T17:51:00.246000Z
+------------------------------------------------------------
+
+🔸 ORDER 24/50
+Order ID: 67a25383-22a3-4f11-b5eb-acc6d60e0e0e
+Created: 2025-02-04T17:50:59.856580Z
+Updated: 2025-02-04T17:51:00.472465Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: strategy_detail
+Processed Premium: $3035
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $30.35000000 x 1.00000 at 2025-02-04T17:51:00.246000Z
+------------------------------------------------------------
+
+🔸 ORDER 25/50
+Order ID: 67a25383-22a3-4f11-b5eb-acc6d60e0e0e
+Created: 2025-02-04T17:50:59.856580Z
+Updated: 2025-02-04T17:51:00.472465Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: strategy_detail
+Processed Premium: $3035
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $30.35000000 x 1.00000 at 2025-02-04T17:51:00.246000Z
+------------------------------------------------------------
+
+🔸 ORDER 26/50
+Order ID: 67ab8676-4d2a-463e-a7ec-ab4bdf7bc898
+Created: 2025-02-11T17:18:46.123636Z
+Updated: 2025-02-11T17:44:41.269146Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: order_detail
+Processed Premium: $4090
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $40.90000000 x 1.00000 at 2025-02-11T17:44:41.043000Z
+------------------------------------------------------------
+
+🔸 ORDER 27/50
+Order ID: 67ab8676-4d2a-463e-a7ec-ab4bdf7bc898
+Created: 2025-02-11T17:18:46.123636Z
+Updated: 2025-02-11T17:44:41.269146Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: order_detail
+Processed Premium: $4090
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $40.90000000 x 1.00000 at 2025-02-11T17:44:41.043000Z
+------------------------------------------------------------
+
+🔸 ORDER 28/50
+Order ID: 67ab8676-4d2a-463e-a7ec-ab4bdf7bc898
+Created: 2025-02-11T17:18:46.123636Z
+Updated: 2025-02-11T17:44:41.269146Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: order_detail
+Processed Premium: $4090
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $40.90000000 x 1.00000 at 2025-02-11T17:44:41.043000Z
+------------------------------------------------------------
+
+🔸 ORDER 29/50
+Order ID: 67ab8676-4d2a-463e-a7ec-ab4bdf7bc898
+Created: 2025-02-11T17:18:46.123636Z
+Updated: 2025-02-11T17:44:41.269146Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: order_detail
+Processed Premium: $4090
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $40.90000000 x 1.00000 at 2025-02-11T17:44:41.043000Z
+------------------------------------------------------------
+
+🔸 ORDER 30/50
+Order ID: 67ab8676-4d2a-463e-a7ec-ab4bdf7bc898
+Created: 2025-02-11T17:18:46.123636Z
+Updated: 2025-02-11T17:44:41.269146Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: order_detail
+Processed Premium: $4090
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $40.90000000 x 1.00000 at 2025-02-11T17:44:41.043000Z
+------------------------------------------------------------
+
+🔸 ORDER 31/50
+Order ID: 67bddb1d-6cc1-4c36-9be7-5c26c90fadef
+Created: 2025-02-25T15:00:45.698574Z
+Updated: 2025-02-25T15:00:46.771871Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: order_detail
+Processed Premium: $3652
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $36.52000000 x 1.00000 at 2025-02-25T15:00:46.289000Z
+------------------------------------------------------------
+
+🔸 ORDER 32/50
+Order ID: 67bddb1d-6cc1-4c36-9be7-5c26c90fadef
+Created: 2025-02-25T15:00:45.698574Z
+Updated: 2025-02-25T15:00:46.771871Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: order_detail
+Processed Premium: $3652
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $36.52000000 x 1.00000 at 2025-02-25T15:00:46.289000Z
+------------------------------------------------------------
+
+🔸 ORDER 33/50
+Order ID: 67bddb1d-6cc1-4c36-9be7-5c26c90fadef
+Created: 2025-02-25T15:00:45.698574Z
+Updated: 2025-02-25T15:00:46.771871Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: order_detail
+Processed Premium: $3652
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $36.52000000 x 1.00000 at 2025-02-25T15:00:46.289000Z
+------------------------------------------------------------
+
+🔸 ORDER 34/50
+Order ID: 67bddb1d-6cc1-4c36-9be7-5c26c90fadef
+Created: 2025-02-25T15:00:45.698574Z
+Updated: 2025-02-25T15:00:46.771871Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: order_detail
+Processed Premium: $3652
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $36.52000000 x 1.00000 at 2025-02-25T15:00:46.289000Z
+------------------------------------------------------------
+
+🔸 ORDER 35/50
+Order ID: 67bddb1d-6cc1-4c36-9be7-5c26c90fadef
+Created: 2025-02-25T15:00:45.698574Z
+Updated: 2025-02-25T15:00:46.771871Z
+State: filled
+Direction: debit
+Strategy: long_call
+Opening Strategy: long_call
+Closing Strategy: None
+Form Source: order_detail
+Processed Premium: $3652
+Processed Quantity: 1.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: buy
+    Position Effect: open
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $36.52000000 x 1.00000 at 2025-02-25T15:00:46.289000Z
+------------------------------------------------------------
+
+🔸 ORDER 36/50
+Order ID: 686e71be-f798-4929-babc-98ac946c93fb
+Created: 2025-07-09T13:42:22.475424Z
+Updated: 2025-07-09T13:42:23.135575Z
+State: filled
+Direction: credit
+Strategy: short_call
+Opening Strategy: None
+Closing Strategy: long_call
+Form Source: strategy_detail
+Processed Premium: $26100
+Processed Quantity: 4.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: sell
+    Position Effect: close
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $65.25000000 x 4.00000 at 2025-07-09T13:42:22.899000Z
+------------------------------------------------------------
+
+🔸 ORDER 37/50
+Order ID: 686e71be-f798-4929-babc-98ac946c93fb
+Created: 2025-07-09T13:42:22.475424Z
+Updated: 2025-07-09T13:42:23.135575Z
+State: filled
+Direction: credit
+Strategy: short_call
+Opening Strategy: None
+Closing Strategy: long_call
+Form Source: strategy_detail
+Processed Premium: $26100
+Processed Quantity: 4.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: sell
+    Position Effect: close
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $65.25000000 x 4.00000 at 2025-07-09T13:42:22.899000Z
+------------------------------------------------------------
+
+🔸 ORDER 38/50
+Order ID: 686e71be-f798-4929-babc-98ac946c93fb
+Created: 2025-07-09T13:42:22.475424Z
+Updated: 2025-07-09T13:42:23.135575Z
+State: filled
+Direction: credit
+Strategy: short_call
+Opening Strategy: None
+Closing Strategy: long_call
+Form Source: strategy_detail
+Processed Premium: $26100
+Processed Quantity: 4.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: sell
+    Position Effect: close
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $65.25000000 x 4.00000 at 2025-07-09T13:42:22.899000Z
+------------------------------------------------------------
+
+🔸 ORDER 39/50
+Order ID: 686e71be-f798-4929-babc-98ac946c93fb
+Created: 2025-07-09T13:42:22.475424Z
+Updated: 2025-07-09T13:42:23.135575Z
+State: filled
+Direction: credit
+Strategy: short_call
+Opening Strategy: None
+Closing Strategy: long_call
+Form Source: strategy_detail
+Processed Premium: $26100
+Processed Quantity: 4.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: sell
+    Position Effect: close
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $65.25000000 x 4.00000 at 2025-07-09T13:42:22.899000Z
+------------------------------------------------------------
+
+🔸 ORDER 40/50
+Order ID: 686e71be-f798-4929-babc-98ac946c93fb
+Created: 2025-07-09T13:42:22.475424Z
+Updated: 2025-07-09T13:42:23.135575Z
+State: filled
+Direction: credit
+Strategy: short_call
+Opening Strategy: None
+Closing Strategy: long_call
+Form Source: strategy_detail
+Processed Premium: $26100
+Processed Quantity: 4.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: sell
+    Position Effect: close
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 1
+      Execution 1: $65.25000000 x 4.00000 at 2025-07-09T13:42:22.899000Z
+------------------------------------------------------------
+
+🔸 ORDER 41/50
+Order ID: 68712122-c2de-43e6-b894-1a9a42220447
+Created: 2025-07-11T14:35:14.029643Z
+Updated: 2025-07-11T14:35:15.746676Z
+State: filled
+Direction: credit
+Strategy: short_call
+Opening Strategy: None
+Closing Strategy: long_call
+Form Source: strategy_detail
+Processed Premium: $13753
+Processed Quantity: 2.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: sell
+    Position Effect: close
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 2
+      Execution 1: $68.77000000 x 1.00000 at 2025-07-11T14:35:14.603000Z
+      Execution 2: $68.76000000 x 1.00000 at 2025-07-11T14:35:14.602000Z
+------------------------------------------------------------
+
+🔸 ORDER 42/50
+Order ID: 68712122-c2de-43e6-b894-1a9a42220447
+Created: 2025-07-11T14:35:14.029643Z
+Updated: 2025-07-11T14:35:15.746676Z
+State: filled
+Direction: credit
+Strategy: short_call
+Opening Strategy: None
+Closing Strategy: long_call
+Form Source: strategy_detail
+Processed Premium: $13753
+Processed Quantity: 2.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: sell
+    Position Effect: close
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 2
+      Execution 1: $68.77000000 x 1.00000 at 2025-07-11T14:35:14.603000Z
+      Execution 2: $68.76000000 x 1.00000 at 2025-07-11T14:35:14.602000Z
+------------------------------------------------------------
+
+🔸 ORDER 43/50
+Order ID: 68712122-c2de-43e6-b894-1a9a42220447
+Created: 2025-07-11T14:35:14.029643Z
+Updated: 2025-07-11T14:35:15.746676Z
+State: filled
+Direction: credit
+Strategy: short_call
+Opening Strategy: None
+Closing Strategy: long_call
+Form Source: strategy_detail
+Processed Premium: $13753
+Processed Quantity: 2.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: sell
+    Position Effect: close
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 2
+      Execution 1: $68.77000000 x 1.00000 at 2025-07-11T14:35:14.603000Z
+      Execution 2: $68.76000000 x 1.00000 at 2025-07-11T14:35:14.602000Z
+------------------------------------------------------------
+
+🔸 ORDER 44/50
+Order ID: 68712122-c2de-43e6-b894-1a9a42220447
+Created: 2025-07-11T14:35:14.029643Z
+Updated: 2025-07-11T14:35:15.746676Z
+State: filled
+Direction: credit
+Strategy: short_call
+Opening Strategy: None
+Closing Strategy: long_call
+Form Source: strategy_detail
+Processed Premium: $13753
+Processed Quantity: 2.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: sell
+    Position Effect: close
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 2
+      Execution 1: $68.77000000 x 1.00000 at 2025-07-11T14:35:14.603000Z
+      Execution 2: $68.76000000 x 1.00000 at 2025-07-11T14:35:14.602000Z
+------------------------------------------------------------
+
+🔸 ORDER 45/50
+Order ID: 68712122-c2de-43e6-b894-1a9a42220447
+Created: 2025-07-11T14:35:14.029643Z
+Updated: 2025-07-11T14:35:15.746676Z
+State: filled
+Direction: credit
+Strategy: short_call
+Opening Strategy: None
+Closing Strategy: long_call
+Form Source: strategy_detail
+Processed Premium: $13753
+Processed Quantity: 2.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: sell
+    Position Effect: close
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 2
+      Execution 1: $68.77000000 x 1.00000 at 2025-07-11T14:35:14.603000Z
+      Execution 2: $68.76000000 x 1.00000 at 2025-07-11T14:35:14.602000Z
+------------------------------------------------------------
+
+🔸 ORDER 46/50
+Order ID: 68823620-23d1-4e52-bb7c-9944b805725b
+Created: 2025-07-24T13:33:20.785629Z
+Updated: 2025-07-24T13:33:33.218848Z
+State: filled
+Direction: credit
+Strategy: short_call
+Opening Strategy: None
+Closing Strategy: long_call
+Form Source: strategy_detail
+Processed Premium: $14680
+Processed Quantity: 2.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: sell
+    Position Effect: close
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 2
+      Execution 1: $73.40000000 x 1.00000 at 2025-07-24T13:33:32.658000Z
+      Execution 2: $73.40000000 x 1.00000 at 2025-07-24T13:33:32.650000Z
+------------------------------------------------------------
+
+🔸 ORDER 47/50
+Order ID: 68823620-23d1-4e52-bb7c-9944b805725b
+Created: 2025-07-24T13:33:20.785629Z
+Updated: 2025-07-24T13:33:33.218848Z
+State: filled
+Direction: credit
+Strategy: short_call
+Opening Strategy: None
+Closing Strategy: long_call
+Form Source: strategy_detail
+Processed Premium: $14680
+Processed Quantity: 2.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: sell
+    Position Effect: close
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 2
+      Execution 1: $73.40000000 x 1.00000 at 2025-07-24T13:33:32.658000Z
+      Execution 2: $73.40000000 x 1.00000 at 2025-07-24T13:33:32.650000Z
+------------------------------------------------------------
+
+🔸 ORDER 48/50
+Order ID: 68823620-23d1-4e52-bb7c-9944b805725b
+Created: 2025-07-24T13:33:20.785629Z
+Updated: 2025-07-24T13:33:33.218848Z
+State: filled
+Direction: credit
+Strategy: short_call
+Opening Strategy: None
+Closing Strategy: long_call
+Form Source: strategy_detail
+Processed Premium: $14680
+Processed Quantity: 2.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: sell
+    Position Effect: close
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 2
+      Execution 1: $73.40000000 x 1.00000 at 2025-07-24T13:33:32.658000Z
+      Execution 2: $73.40000000 x 1.00000 at 2025-07-24T13:33:32.650000Z
+------------------------------------------------------------
+
+🔸 ORDER 49/50
+Order ID: 68823620-23d1-4e52-bb7c-9944b805725b
+Created: 2025-07-24T13:33:20.785629Z
+Updated: 2025-07-24T13:33:33.218848Z
+State: filled
+Direction: credit
+Strategy: short_call
+Opening Strategy: None
+Closing Strategy: long_call
+Form Source: strategy_detail
+Processed Premium: $14680
+Processed Quantity: 2.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: sell
+    Position Effect: close
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 2
+      Execution 1: $73.40000000 x 1.00000 at 2025-07-24T13:33:32.658000Z
+      Execution 2: $73.40000000 x 1.00000 at 2025-07-24T13:33:32.650000Z
+------------------------------------------------------------
+
+🔸 ORDER 50/50
+Order ID: 68823620-23d1-4e52-bb7c-9944b805725b
+Created: 2025-07-24T13:33:20.785629Z
+Updated: 2025-07-24T13:33:33.218848Z
+State: filled
+Direction: credit
+Strategy: short_call
+Opening Strategy: None
+Closing Strategy: long_call
+Form Source: strategy_detail
+Processed Premium: $14680
+Processed Quantity: 2.00000
+Chain Symbol: NVDA
+Legs Count: 1
+  LEG 1:
+    Strike: $100.0000
+    Option Type: call
+    Expiration: 2025-09-19
+    Side: sell
+    Position Effect: close
+    Long Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_L1
+    Short Strategy Code: c23aa70d-f0c0-4c5f-bfad-52e9905e75b4_S1
+    Executions: 2
+      Execution 1: $73.40000000 x 1.00000 at 2025-07-24T13:33:32.658000Z
+      Execution 2: $73.40000000 x 1.00000 at 2025-07-24T13:33:32.650000Z
+------------------------------------------------------------
+
+📊 CHAIN ANALYSIS SUMMARY
+================================================================================
+Chain Span: 2025-01-28T15:19:09.332766Z to 2025-07-24T13:33:20.785629Z
+
+Option Details:
+  Symbol: NVDA
+  Strike Price: $100.0000
+  Expiration Date: 2025-09-19
+  Open Date: 2025-01-28
+
+Quantity Analysis:
+  Total Contracts Bought: 40
+  Total Contracts Sold: 40
+  Net Position: 0
+  Total Volume: 80
+  Total Orders: 50
+  Chain Duration: 176 days
+Position Effect Sequence:
+  Order 1: open buy
+  Order 2: open buy
+  Order 3: open buy
+  Order 4: open buy
+  Order 5: open buy
+  Order 6: open buy
+  Order 7: open buy
+  Order 8: open buy
+  Order 9: open buy
+  Order 10: open buy
+  Order 11: open buy
+  Order 12: open buy
+  Order 13: open buy
+  Order 14: open buy
+  Order 15: open buy
+  Order 16: open buy
+  Order 17: open buy
+  Order 18: open buy
+  Order 19: open buy
+  Order 20: open buy
+  Order 21: open buy
+  Order 22: open buy
+  Order 23: open buy
+  Order 24: open buy
+  Order 25: open buy
+  Order 26: open buy
+  Order 27: open buy
+  Order 28: open buy
+  Order 29: open buy
+  Order 30: open buy
+  Order 31: open buy
+  Order 32: open buy
+  Order 33: open buy
+  Order 34: open buy
+  Order 35: open buy
+  Order 36: close sell
+  Order 37: close sell
+  Order 38: close sell
+  Order 39: close sell
+  Order 40: close sell
+  Order 41: close sell
+  Order 42: close sell
+  Order 43: close sell
+  Order 44: close sell
+  Order 45: close sell
+  Order 46: close sell
+  Order 47: close sell
+  Order 48: close sell
+  Order 49: close sell
+  Order 50: close sell
+
+Financial Summary:
+  Total Credits: $272,665.00
+  Total Debits: $133,085.00
+  Net Premium: $139,580.00
+
+Strategy Progression:
+  Strategies: long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> short_call -> short_call -> short_call -> short_call -> short_call -> short_call -> short_call -> short_call -> short_call -> short_call -> short_call -> short_call -> short_call -> short_call -> short_call
+  Opening Strategies: long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call
+  Closing Strategies: long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call -> long_call
+
+Chain Characteristics:
+  Has Opens: True
+  Has Closes: True
+  Potential Chain: Yes

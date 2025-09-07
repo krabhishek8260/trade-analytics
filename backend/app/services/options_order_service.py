@@ -7,7 +7,7 @@ to optimize rolled options analysis performance.
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any, Callable
 from sqlalchemy import select, and_, desc, func, asc, text
 from sqlalchemy.dialects.postgresql import insert
@@ -403,7 +403,7 @@ class OptionsOrderService:
                     "direction": order_data.get("direction", ""),
                     "state": order_data.get("state", ""),
                     "type": order_data.get("type", ""),
-                    "processed_quantity": order_data.get("quantity", 0),
+                    "processed_quantity": order_data.get("processed_quantity", 0),
                     "premium": order_data.get("premium"),
                     "processed_premium": order_data.get("processed_premium"),
                     "legs_count": order_data.get("legs_count", 0),
@@ -848,7 +848,7 @@ class OptionsOrderService:
                 if not stats.total_orders:
                     needs_sync = True
                     sync_reason = "No orders found - full sync needed"
-                elif stats.last_sync and stats.last_sync < datetime.now() - timedelta(hours=1):
+                elif stats.last_sync and stats.last_sync < datetime.now(timezone.utc) - timedelta(hours=1):
                     needs_sync = True
                     sync_reason = "Data is stale - incremental sync recommended"
                 else:
@@ -874,3 +874,54 @@ class OptionsOrderService:
                 "message": str(e),
                 "data": {}
             }
+    
+    async def get_orders_for_chain_detection(
+        self,
+        user_id: str,
+        days_back: Optional[int] = 365,
+        symbol: Optional[str] = None
+    ) -> List[OptionsOrder]:
+        """
+        Get options orders optimized for chain detection.
+        
+        Returns only filled orders with proper indexing for strategy code grouping
+        and heuristic analysis.
+        
+        Args:
+            user_id: User ID to get orders for
+            days_back: Number of days to look back
+            symbol: Optional symbol filter
+            
+        Returns:
+            List of OptionsOrder objects sorted by creation time
+        """
+        try:
+            async for db in get_db():
+                # Build query conditions
+                conditions = [
+                    OptionsOrder.user_id == user_id,
+                    OptionsOrder.state == "filled"  # Only filled orders for chain detection
+                ]
+                
+                # Apply lookback window only when days_back is provided and > 0
+                if days_back is not None and days_back > 0:
+                    since_time = datetime.now() - timedelta(days=days_back)
+                    conditions.append(OptionsOrder.created_at >= since_time)
+                
+                if symbol:
+                    conditions.append(OptionsOrder.chain_symbol == symbol.upper())
+                
+                # Query with optimized indexes
+                stmt = select(OptionsOrder).where(
+                    and_(*conditions)
+                ).order_by(OptionsOrder.created_at.asc())  # Chronological order for chain analysis
+                
+                result = await db.execute(stmt)
+                orders = result.scalars().all()
+                
+                logger.info(f"Retrieved {len(orders)} filled orders for chain detection (user: {user_id}, days: {days_back})")
+                return orders
+                
+        except Exception as e:
+            logger.error(f"Error getting orders for chain detection: {str(e)}", exc_info=True)
+            return []

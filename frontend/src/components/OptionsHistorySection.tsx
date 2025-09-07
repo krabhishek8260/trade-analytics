@@ -31,11 +31,12 @@ export default function OptionsHistorySection({
 }: OptionsHistorySectionProps) {
   console.log('OptionsHistorySection: Component mounted')
   console.log('OptionsHistorySection: props received', { formatCurrency: !!formatCurrency, formatPercent: !!formatPercent })
+
   
   // Core data state
   const [ordersData, setOrdersData] = useState<PaginatedOptionsOrdersResponse | null>(null)
   const [syncStatus, setSyncStatus] = useState<OptionsOrdersSyncStatus | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false) // Start as false since we don't load until expanded
   
   console.log('OptionsHistorySection: Every render - current state:', { 
     loading, 
@@ -46,8 +47,8 @@ export default function OptionsHistorySection({
   const [showProgress, setShowProgress] = useState(false)
   const [error, setError] = useState<string | null>(null)
   
-  // UI state - always expanded, no collapsed view
-  const [historyExpanded] = useState(true) // Always expanded
+  // UI state - starts collapsed, can be toggled
+  const [historyExpanded, setHistoryExpanded] = useState(false)
   const [expandedOrders, setExpandedOrders] = useState<ExpandedOrderState>({})
   const [currentPage, setCurrentPage] = useState(1)
   
@@ -106,32 +107,23 @@ export default function OptionsHistorySection({
     }
   }, [filters])
 
-  // Auto-load data on mount using a different approach since useEffect is broken
+  // Auto-load data only when expanded
   const [autoLoaded, setAutoLoaded] = useState(false)
   
-  console.log('OptionsHistorySection: Auto-load check', { autoLoaded, loading })
+  console.log('OptionsHistorySection: Auto-load check', { autoLoaded, loading, historyExpanded })
   
-  if (!autoLoaded) {
-    console.log('OptionsHistorySection: Triggering auto-load')
-    setAutoLoaded(true)
-    // Trigger the same logic as manual load button
-    const autoLoad = async () => {
-      try {
-        console.log('OptionsHistorySection: Auto-load starting...')
-        setLoading(true)
-        const response = await fetch('/api/backend/options/orders?page=1&limit=20&state=filled&sort_by=created_at&sort_order=desc')
-        const data = await response.json()
-        console.log('OptionsHistorySection: Auto-load API response:', data)
-        setOrdersData(data)
-        setLoading(false)
-      } catch (error) {
-        console.error('OptionsHistorySection: Auto-load error:', error)
-        setError('Failed to load options orders')
-        setLoading(false)
+  useEffect(() => {
+    try {
+      if (!autoLoaded && historyExpanded) {
+        console.log('OptionsHistorySection: Triggering auto-load (expanded)')
+        setAutoLoaded(true)
+        // Use the proper API function instead of direct fetch
+        fetchOrdersData(1)
       }
+    } catch (error) {
+      console.error('OptionsHistorySection: Error in useEffect:', error)
     }
-    autoLoad()
-  }
+  }, [autoLoaded, historyExpanded, fetchOrdersData])
 
   const handleSync = async (forceFullSync = false) => {
     try {
@@ -155,6 +147,15 @@ export default function OptionsHistorySection({
     setSyncing(false)
     setShowProgress(false)
     fetchOrdersData(currentPage)
+  }
+
+  const toggleHistoryExpanded = () => {
+    setHistoryExpanded(prev => !prev)
+    // Load data when expanding for the first time
+    if (!historyExpanded && !autoLoaded) {
+      setAutoLoaded(true)
+      fetchOrdersData(1)
+    }
   }
 
   const toggleOrderExpansion = (orderId: string) => {
@@ -215,19 +216,38 @@ export default function OptionsHistorySection({
     )
   }
 
+  // Show collapsed state if not expanded
+  if (!historyExpanded) {
+    return (
+      <div className="space-y-4">
+        <div 
+          className="flex items-center justify-between p-4 bg-gradient-to-r from-muted/10 to-muted/20 rounded-xl border border-muted/30 cursor-pointer hover:bg-muted/30 transition-all"
+          onClick={toggleHistoryExpanded}
+        >
+          <div className="flex items-center space-x-3">
+            <div className="text-xl">📈</div>
+            <div>
+              <h3 className="text-lg font-semibold text-foreground">
+                Options History
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                View your options trading history and orders
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2 text-muted-foreground">
+            <span className="text-sm">Click to expand</span>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const orders = ordersData?.data || []
   const pagination = ordersData?.pagination || { total: 0, page: 1, total_pages: 1, has_next: false, has_prev: false }
-  
-  console.log('OptionsHistorySection: Rendering logic', {
-    ordersLength: orders.length,
-    paginationTotal: pagination.total,
-    syncing,
-    willShowNoOrders: orders.length === 0 && !syncing,
-    willShowMain: !(orders.length === 0 && !syncing),
-    ordersDataStructure: ordersData ? Object.keys(ordersData) : null,
-    paginationStructure: ordersData?.pagination ? Object.keys(ordersData.pagination) : null,
-    rawPagination: ordersData?.pagination
-  })
 
   if (orders.length === 0 && !syncing) {
     return (
@@ -259,11 +279,19 @@ export default function OptionsHistorySection({
     <div className="space-y-4">
       {/* Header with sync controls */}
       <div className="flex items-center justify-between mb-6">
-        <div className="flex-1">
-          <h3 className="text-xl font-semibold text-foreground">
-            Options History
-          </h3>
-          <p className="text-sm text-muted-foreground mt-1">
+        <div 
+          className="flex-1 cursor-pointer"
+          onClick={toggleHistoryExpanded}
+        >
+          <div className="flex items-center space-x-2">
+            <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+            </svg>
+            <h3 className="text-xl font-semibold text-foreground">
+              Options History
+            </h3>
+          </div>
+          <p className="text-sm text-muted-foreground mt-1 ml-6">
             {pagination.total} total orders • Page {currentPage} of {pagination.total_pages}
           </p>
         </div>
@@ -272,21 +300,9 @@ export default function OptionsHistorySection({
         <div className="flex items-center space-x-2">
           <SyncStatusIndicator />
           <button
-            onClick={async () => {
+            onClick={() => {
               console.log('OptionsHistorySection: Refresh button clicked')
-              try {
-                setLoading(true)
-                setError(null)
-                const response = await fetch(`/api/backend/options/orders?page=${currentPage}&limit=20&state=filled&sort_by=created_at&sort_order=desc`)
-                const data = await response.json()
-                console.log('OptionsHistorySection: Refresh API response:', data)
-                setOrdersData(data)
-                setLoading(false)
-              } catch (error) {
-                console.error('OptionsHistorySection: Refresh error:', error)
-                setError('Failed to refresh options orders')
-                setLoading(false)
-              }
+              fetchOrdersData(currentPage)
             }}
             disabled={loading}
             className="px-3 py-2 text-sm bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 disabled:opacity-50"
@@ -372,21 +388,11 @@ export default function OptionsHistorySection({
             </div>
             <div className="flex space-x-2">
                 <button
-                  onClick={async () => {
+                  onClick={() => {
                     const newPage = Math.max(1, currentPage - 1)
                     console.log('OptionsHistorySection: Previous page clicked, going to page:', newPage)
                     setCurrentPage(newPage)
-                    try {
-                      setLoading(true)
-                      const response = await fetch(`/api/backend/options/orders?page=${newPage}&limit=20&state=filled&sort_by=created_at&sort_order=desc`)
-                      const data = await response.json()
-                      console.log('OptionsHistorySection: Previous page API response:', data)
-                      setOrdersData(data)
-                      setLoading(false)
-                    } catch (error) {
-                      console.error('OptionsHistorySection: Previous page error:', error)
-                      setLoading(false)
-                    }
+                    fetchOrdersData(newPage)
                   }}
                   disabled={!pagination.has_prev || loading}
                   className="px-4 py-2 text-sm bg-secondary/80 hover:bg-secondary text-secondary-foreground rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
@@ -397,21 +403,11 @@ export default function OptionsHistorySection({
                   {currentPage} of {pagination.total_pages}
                 </span>
                 <button
-                  onClick={async () => {
+                  onClick={() => {
                     const newPage = Math.min(pagination.total_pages, currentPage + 1)
                     console.log('OptionsHistorySection: Next page clicked, going to page:', newPage)
                     setCurrentPage(newPage)
-                    try {
-                      setLoading(true)
-                      const response = await fetch(`/api/backend/options/orders?page=${newPage}&limit=20&state=filled&sort_by=created_at&sort_order=desc`)
-                      const data = await response.json()
-                      console.log('OptionsHistorySection: Next page API response:', data)
-                      setOrdersData(data)
-                      setLoading(false)
-                    } catch (error) {
-                      console.error('OptionsHistorySection: Next page error:', error)
-                      setLoading(false)
-                    }
+                    fetchOrdersData(newPage)
                   }}
                   disabled={!pagination.has_next || loading}
                   className="px-4 py-2 text-sm bg-secondary/80 hover:bg-secondary text-secondary-foreground rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
@@ -425,7 +421,7 @@ export default function OptionsHistorySection({
         {/* Data source indicator */}
         {ordersData?.data_source && (
           <div className="text-xs text-muted-foreground text-center mt-3 p-2 bg-muted/20 rounded-lg border border-muted/30">
-            💾 Data source: {ordersData.data_source === 'database' ? 'Local database' : 'Robinhood API (fallback)'}
+            💾 Data source: {ordersData.data_source === 'database' ? 'Local database' : ordersData.data_source === 'api_fallback' ? 'Robinhood API (fallback)' : ordersData.data_source}
           </div>
         )}
       </div>

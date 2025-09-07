@@ -358,7 +358,7 @@
         "option": "https://api.robinhood.com/options/instruments/c733e882-bc25-48a4-b9ae-1730b94f1880/",
         "position_effect": "open",
         "ratio_quantity": 1,
-        "side": "buy",
+        "side": "buy",  
         "expiration_date": "2025-09-19",
         "strike_price": "50.0000",
         "option_type": "call",
