@@ -5,6 +5,7 @@ import { getRolledOptionsChains, OptionsChain, RolledOptionsResponse, OptionsOrd
 import { ChainSummary } from './ui/ChainSummary'
 import { SymbolLogo } from './ui/SymbolLogo'
 import OptionsOrderLegs from './options/OptionsOrderLegs'
+import NetPremiumBreakdownDrawer from './NetPremiumBreakdownDrawer'
 
 interface RolledOptionsSectionProps {
   formatCurrency: (value: number) => string
@@ -31,6 +32,7 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
   const [availableStrategies, setAvailableStrategies] = useState<string[]>([])
   // Derived strategy options: union of API-provided and those present in current data
   const [strategyOptions, setStrategyOptions] = useState<string[]>([])
+  const [showNetPremiumBreakdown, setShowNetPremiumBreakdown] = useState(false)
 
   useEffect(() => {
     setCurrentPage(1)
@@ -310,6 +312,7 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
   }
 
   return (
+    <>
     <div className="space-y-6">
       <div>
         <button
@@ -459,6 +462,7 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
               summary={rolledOptions.summary} 
               formatCurrency={formatCurrency}
               className="mb-6"
+              onNetPremiumClick={() => setShowNetPremiumBreakdown(true)}
             />
 
             {/* Display Info */}
@@ -757,5 +761,22 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
         )}
       </div>
     </div>
+    <NetPremiumBreakdownDrawer 
+      isOpen={showNetPremiumBreakdown}
+      onClose={() => setShowNetPremiumBreakdown(false)}
+      formatCurrency={formatCurrency}
+      daysBack={daysBack}
+      status={selectedStatus}
+    />
+    </>
+  )
+}
+
+// Render breakdown drawer adjacent to section for proper overlay layering
+export function RolledOptionsSectionWithBreakdown(props: RolledOptionsSectionProps) {
+  return (
+    <>
+      <RolledOptionsSection {...props} />
+    </>
   )
 }

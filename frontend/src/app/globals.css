@@ -166,6 +166,53 @@
     @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4;
   }
 
+  /* Heatmap styles */
+  .heatmap-grid {
+    @apply overflow-x-auto;
+  }
+  .heatmap-table {
+    @apply w-full text-sm border-collapse;
+  }
+  .heatmap-table thead th {
+    @apply bg-muted/60 text-muted-foreground font-medium sticky top-0 z-10;
+  }
+  .heatmap-table th, .heatmap-table td {
+    @apply border-b border-border px-3 py-2 align-middle;
+  }
+  .heatmap-table tbody tr:hover td {
+    @apply bg-muted/30;
+  }
+  .heatmap-cell {
+    @apply rounded text-right font-medium whitespace-nowrap;
+    font-variant-numeric: tabular-nums;
+    min-width: 6.5rem; /* 104px ensures visibility */
+    padding: 0.15rem 0.4rem;
+    border: 1px solid hsl(var(--border));
+  }
+  .heatmap-cell.empty {
+    @apply text-muted-foreground text-center bg-transparent border-transparent;
+  }
+  .heatmap-chip {
+    @apply rounded font-semibold whitespace-nowrap;
+    font-variant-numeric: tabular-nums;
+    padding: 0.15rem 0.4rem;
+    border: 1px solid hsl(var(--border));
+  }
+
+  /* Discrete heatmap buckets for dark mode visibility */
+  /* Positive buckets */
+  .hm-pos-1 { @apply bg-green-950 text-green-50 border-green-900; }
+  .hm-pos-2 { @apply bg-green-900 text-green-50 border-green-800; }
+  .hm-pos-3 { @apply bg-green-800 text-green-50 border-green-700; }
+  .hm-pos-4 { @apply bg-green-700 text-white   border-green-700; }
+  .hm-pos-5 { @apply bg-green-600 text-white   border-green-600; }
+  /* Negative buckets */
+  .hm-neg-1 { @apply bg-red-950 text-red-50 border-red-900; }
+  .hm-neg-2 { @apply bg-red-900 text-red-50 border-red-800; }
+  .hm-neg-3 { @apply bg-red-800 text-red-50 border-red-700; }
+  .hm-neg-4 { @apply bg-red-700 text-white   border-red-700; }
+  .hm-neg-5 { @apply bg-red-600 text-white   border-red-600; }
+
   .grid-responsive-wide {
     @apply grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6;
   }

@@ -16,9 +16,10 @@ interface ChainSummaryProps {
   summary: ChainSummaryData
   formatCurrency: (value: number) => string
   className?: string
+  onNetPremiumClick?: () => void
 }
 
-export function ChainSummary({ summary, formatCurrency, className = '' }: ChainSummaryProps) {
+export function ChainSummary({ summary, formatCurrency, className = '', onNetPremiumClick }: ChainSummaryProps) {
   return (
     <div className={`grid-responsive ${className}`}>
       <SummaryCard
@@ -36,6 +37,7 @@ export function ChainSummary({ summary, formatCurrency, className = '' }: ChainS
         value={formatCurrency(summary.net_premium_collected)}
         subtitle="Collected"
         valueColor={summary.net_premium_collected >= 0 ? 'profit' : 'loss'}
+        onClick={onNetPremiumClick}
       />
     </div>
   )
