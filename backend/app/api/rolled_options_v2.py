@@ -84,6 +84,7 @@ async def expire_rolled_options_cache(
 async def get_rolled_options_chains(
     symbol: Optional[str] = Query(None, description="Filter by underlying symbol"),
     status: Optional[str] = Query(None, regex="^(active|closed|expired)$", description="Filter by chain status"),
+    strategy: Optional[str] = Query(None, description="Filter by initial strategy"),
     page: int = Query(1, ge=1, description="Page number for pagination"),  
     limit: int = Query(25, ge=5, le=100, description="Number of chains per page"),
     sort_by: str = Query("last_activity", regex="^(last_activity|net_premium|total_pnl|start_date)$", description="Sort field"),
@@ -141,7 +142,8 @@ async def get_rolled_options_chains(
                 },
                 "filters_applied": {
                     "symbol": symbol,
-                    "status": status
+                    "status": status,
+                    "strategy": strategy
                 }
             })
         
@@ -156,6 +158,9 @@ async def get_rolled_options_chains(
         
         if status:
             query = query.where(RolledOptionsChain.status == status)
+        
+        if strategy:
+            query = query.where(RolledOptionsChain.initial_strategy == strategy)
         
         # Apply sorting
         sort_field = {
@@ -233,7 +238,7 @@ async def get_rolled_options_chains(
         has_prev = page > 1
         
         # Get summary statistics
-        summary = await _get_chains_summary(db, user_id, symbol, status)
+        summary = await _get_chains_summary(db, user_id, symbol, status, strategy)
         
         return DataResponse(data={
             "chains": chains,
@@ -255,6 +260,7 @@ async def get_rolled_options_chains(
             "filters_applied": {
                 "symbol": symbol,
                 "status": status,
+                "strategy": strategy,
                 "sort_by": sort_by,
                 "sort_order": sort_order
             },
@@ -473,7 +479,8 @@ async def _get_chains_summary(
     db: AsyncSession, 
     user_id: str, 
     symbol: Optional[str] = None,
-    status: Optional[str] = None
+    status: Optional[str] = None,
+    strategy: Optional[str] = None
 ) -> Dict[str, Any]:
     """Get summary statistics for user's chains"""
     
@@ -485,6 +492,9 @@ async def _get_chains_summary(
     
     if status:
         query = query.where(RolledOptionsChain.status == status)
+    
+    if strategy:
+        query = query.where(RolledOptionsChain.initial_strategy == strategy)
     
     result = await db.execute(query)
     chains = result.scalars().all()
@@ -562,21 +572,37 @@ async def get_available_symbols(
     """
     try:
         # Query for distinct symbols from user's chains
-        query = select(RolledOptionsChain.underlying_symbol, func.count()).where(
+        symbols_query = select(RolledOptionsChain.underlying_symbol, func.count()).where(
             RolledOptionsChain.user_id == user_id
         ).group_by(RolledOptionsChain.underlying_symbol)
         
-        result = await db.execute(query)
-        symbol_data = result.all()
+        symbols_result = await db.execute(symbols_query)
+        symbol_data = symbols_result.all()
+        
+        # Query for distinct strategies from user's chains
+        strategies_query = select(RolledOptionsChain.initial_strategy, func.count()).where(
+            RolledOptionsChain.user_id == user_id,
+            RolledOptionsChain.initial_strategy.isnot(None)
+        ).group_by(RolledOptionsChain.initial_strategy)
+        
+        strategies_result = await db.execute(strategies_query)
+        strategy_data = strategies_result.all()
         
         # Extract symbols and counts
         symbol_counts = {symbol: count for symbol, count in symbol_data}
         symbols = sorted(symbol_counts.keys())
         
+        # Extract strategies and counts
+        strategy_counts = {strategy: count for strategy, count in strategy_data}
+        strategies = sorted(strategy_counts.keys())
+        
         return DataResponse(data={
             "symbols": symbols,
             "symbol_counts": symbol_counts,
-            "total_symbols": len(symbols)
+            "total_symbols": len(symbols),
+            "strategies": strategies,
+            "strategy_counts": strategy_counts,
+            "total_strategies": len(strategies)
         })
         
     except Exception as e:

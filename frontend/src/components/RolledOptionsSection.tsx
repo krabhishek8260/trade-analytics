@@ -19,6 +19,7 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set())
   const [selectedStatus, setSelectedStatus] = useState<'all' | 'active' | 'closed' | 'expired'>('all')
   const [selectedSymbol, setSelectedSymbol] = useState<string>('')
+  const [selectedStrategy, setSelectedStrategy] = useState<string>('')
   const [currentPage, setCurrentPage] = useState(1)
   const [daysBack, setDaysBack] = useState(180) // Default to 180 days for better chain detection
   const [pageSize, setPageSize] = useState(25)
@@ -27,6 +28,9 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
   const [syncStatus, setSyncStatus] = useState<any>(null)
   const [syncError, setSyncError] = useState<string | null>(null)
   const [availableSymbols, setAvailableSymbols] = useState<string[]>([])
+  const [availableStrategies, setAvailableStrategies] = useState<string[]>([])
+  // Derived strategy options: union of API-provided and those present in current data
+  const [strategyOptions, setStrategyOptions] = useState<string[]>([])
 
   useEffect(() => {
     setCurrentPage(1)
@@ -34,7 +38,7 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
     setExpandedOrders(new Set()) // Reset expanded orders when filters change
     fetchRolledOptions(1)
     fetchSyncStatus() // Also fetch sync status when filters change
-  }, [selectedStatus, selectedSymbol, daysBack, pageSize])
+  }, [selectedStatus, selectedSymbol, selectedStrategy, daysBack, pageSize])
 
   // Fetch available symbols when component loads
   useEffect(() => {
@@ -45,10 +49,12 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
     try {
       const symbolsData = await getRolledOptionsSymbols()
       setAvailableSymbols(symbolsData.symbols)
+      setAvailableStrategies(symbolsData.strategies || [])
     } catch (err) {
       console.error('Failed to fetch available symbols:', err)
       // Don't show error for symbols fetch failures, just use empty array
       setAvailableSymbols([])
+      setAvailableStrategies([])
     }
   }
 
@@ -99,10 +105,28 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
       }
       if (selectedStatus !== 'all') params.status = selectedStatus
       if (selectedSymbol) params.symbol = selectedSymbol
+      if (selectedStrategy) params.strategy = selectedStrategy
 
       const data = await getRolledOptionsChains(params)
       setRolledOptions(data)
       setCurrentPage(page)
+      // Update strategy options to include any strategies present in the loaded data
+      try {
+        const pageStrategies = new Set<string>()
+        // Include chain-level initial strategies only (matches backend filter semantics)
+        data.chains.forEach((chain) => {
+          const initial = (chain as any).initial_strategy
+          if (initial && typeof initial === 'string') pageStrategies.add(initial)
+        })
+        // Merge with API-provided strategies
+        const merged = Array.from(new Set([...(availableStrategies || []), ...Array.from(pageStrategies)]))
+          .filter(Boolean)
+          .sort()
+        setStrategyOptions(merged)
+      } catch {
+        // If anything goes wrong, fall back to API-provided strategies
+        setStrategyOptions([...(availableStrategies || [])].sort())
+      }
       // Reset expanded chains when new data is loaded to keep them collapsed by default
       if (page === 1) {
         setExpandedChains(new Set())
@@ -187,6 +211,30 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
 
   // Use availableSymbols state instead of deriving from current page data
   const uniqueSymbols = availableSymbols
+  
+  // Keep strategy options in sync when API-provided list changes (e.g., after sync)
+  useEffect(() => {
+    // If we already merged with page data, keep that; otherwise, seed from API list
+    if (!rolledOptions) {
+      setStrategyOptions([...(availableStrategies || [])].sort())
+    } else {
+      // Recompute merged list including current page (initial) strategies
+      try {
+        const pageStrategies = new Set<string>()
+        rolledOptions.chains.forEach((chain) => {
+          const initial = (chain as any).initial_strategy
+          if (initial && typeof initial === 'string') pageStrategies.add(initial)
+        })
+        const merged = Array.from(new Set([...(availableStrategies || []), ...Array.from(pageStrategies)]))
+          .filter(Boolean)
+          .sort()
+        setStrategyOptions(merged)
+      } catch {
+        setStrategyOptions([...(availableStrategies || [])].sort())
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availableStrategies])
 
   if (loading && !rolledOptions) {
     const estimatedTime = daysBack <= 30 ? "1-2 minutes" : 
@@ -351,6 +399,19 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
                 </select>
               </div>
               <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Strategy</label>
+                <select
+                  value={selectedStrategy}
+                  onChange={(e) => setSelectedStrategy(e.target.value)}
+                  className="px-3 py-2 border border-input bg-background rounded-md text-sm"
+                >
+                  <option value="">All Strategies</option>
+                  {strategyOptions.map(strategy => (
+                    <option key={strategy} value={strategy}>{strategy}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-1">Per Page</label>
                 <select
                   value={pageSize}
@@ -442,6 +503,133 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
               </div>
             )}
 
+            {/* Filtered Chains Summary */}
+            {rolledOptions.chains.length > 0 && (selectedSymbol || selectedStatus !== 'all' || selectedStrategy) && (
+              <div className="mb-6 relative overflow-hidden">
+                {/* Background with subtle pattern */}
+                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-indigo-500/10 to-purple-500/10 dark:from-blue-400/5 dark:via-indigo-400/5 dark:to-purple-400/5"></div>
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent dark:via-black/10"></div>
+                
+                {/* Main container */}
+                <div className="relative backdrop-blur-sm bg-white/70 dark:bg-black/30 border-2 border-blue-200/60 dark:border-blue-700/60 rounded-xl shadow-lg shadow-blue-100/50 dark:shadow-blue-900/20 p-6">
+                  {/* Header section */}
+                  <div className="flex items-start justify-between mb-6">
+                    <div className="space-y-2">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-3 h-3 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full shadow-sm"></div>
+                        <h4 className="text-lg font-semibold bg-gradient-to-r from-blue-700 to-indigo-700 dark:from-blue-300 dark:to-indigo-300 bg-clip-text text-transparent">
+                          Filtered Results Summary
+                        </h4>
+                      </div>
+                      <div className="flex items-center space-x-1 text-sm">
+                        {selectedSymbol && (
+                          <div className="inline-flex items-center px-2.5 py-1 rounded-full bg-blue-100 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-700">
+                            <span className="text-blue-700 dark:text-blue-300 font-medium text-xs">
+                              📈 {selectedSymbol}
+                            </span>
+                          </div>
+                        )}
+                        {selectedStatus !== 'all' && (
+                          <div className={`inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-medium ${
+                            selectedStatus === 'active' 
+                              ? 'bg-green-100 dark:bg-green-900/40 border-green-200 dark:border-green-700 text-green-700 dark:text-green-300'
+                              : selectedStatus === 'closed'
+                              ? 'bg-gray-100 dark:bg-gray-900/40 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300'
+                              : 'bg-red-100 dark:bg-red-900/40 border-red-200 dark:border-red-700 text-red-700 dark:text-red-300'
+                          }`}>
+                            {selectedStatus === 'active' ? '🟢' : selectedStatus === 'closed' ? '⚫' : '🔴'} {selectedStatus.charAt(0).toUpperCase() + selectedStatus.slice(1)}
+                          </div>
+                        )}
+                        {selectedStrategy && (
+                          <div className={`inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-medium bg-purple-100 dark:bg-purple-900/40 border-purple-200 dark:border-purple-700 text-purple-700 dark:text-purple-300`}>
+                            🔍 {selectedStrategy}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Main metric highlight */}
+                    <div className="text-right">
+                      <div className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-1 uppercase tracking-wide">
+                        Total Net Premium
+                      </div>
+                      <div className={`text-2xl font-bold mb-1 ${
+                        rolledOptions.chains.reduce((sum, chain) => sum + chain.net_premium, 0) >= 0 
+                          ? 'text-green-600 dark:text-green-400 drop-shadow-sm' 
+                          : 'text-red-600 dark:text-red-400 drop-shadow-sm'
+                      }`}>
+                        {formatCurrency(rolledOptions.chains.reduce((sum, chain) => sum + chain.net_premium, 0))}
+                      </div>
+                      <div className="inline-flex items-center px-2 py-1 rounded-full bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800">
+                        <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+                          {rolledOptions.chains.length} chain{rolledOptions.chains.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Metrics grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-blue-200/50 dark:border-blue-700/50">
+                    {/* Total P&L Card */}
+                    <div className="group relative p-4 rounded-lg bg-white/50 dark:bg-black/20 border border-gray-200/60 dark:border-gray-700/60 hover:border-blue-300 dark:hover:border-blue-600 transition-all duration-200 hover:shadow-md">
+                      <div className="absolute top-2 right-2 opacity-20 group-hover:opacity-30 transition-opacity">
+                        📊
+                      </div>
+                      <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">
+                        Total P&L
+                      </div>
+                      <div className={`text-lg font-bold ${
+                        rolledOptions.chains.reduce((sum, chain) => sum + chain.total_pnl, 0) >= 0 
+                          ? 'text-green-600 dark:text-green-400' 
+                          : 'text-red-600 dark:text-red-400'
+                      }`}>
+                        {formatCurrency(rolledOptions.chains.reduce((sum, chain) => sum + chain.total_pnl, 0))}
+                      </div>
+                    </div>
+
+                    {/* Total Orders Card */}
+                    <div className="group relative p-4 rounded-lg bg-white/50 dark:bg-black/20 border border-gray-200/60 dark:border-gray-700/60 hover:border-blue-300 dark:hover:border-blue-600 transition-all duration-200 hover:shadow-md">
+                      <div className="absolute top-2 right-2 opacity-20 group-hover:opacity-30 transition-opacity">
+                        📋
+                      </div>
+                      <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">
+                        Total Orders
+                      </div>
+                      <div className="text-lg font-bold text-blue-700 dark:text-blue-300">
+                        {rolledOptions.chains.reduce((sum, chain) => sum + chain.orders.length, 0)}
+                      </div>
+                    </div>
+
+                    {/* Credits Collected Card */}
+                    <div className="group relative p-4 rounded-lg bg-white/50 dark:bg-black/20 border border-gray-200/60 dark:border-gray-700/60 hover:border-green-300 dark:hover:border-green-600 transition-all duration-200 hover:shadow-md">
+                      <div className="absolute top-2 right-2 opacity-20 group-hover:opacity-30 transition-opacity">
+                        💰
+                      </div>
+                      <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">
+                        Credits Collected
+                      </div>
+                      <div className="text-lg font-bold text-green-600 dark:text-green-400">
+                        {formatCurrency(rolledOptions.chains.reduce((sum, chain) => sum + chain.total_credits_collected, 0))}
+                      </div>
+                    </div>
+
+                    {/* Debits Paid Card */}
+                    <div className="group relative p-4 rounded-lg bg-white/50 dark:bg-black/20 border border-gray-200/60 dark:border-gray-700/60 hover:border-red-300 dark:hover:border-red-600 transition-all duration-200 hover:shadow-md">
+                      <div className="absolute top-2 right-2 opacity-20 group-hover:opacity-30 transition-opacity">
+                        💸
+                      </div>
+                      <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">
+                        Debits Paid
+                      </div>
+                      <div className="text-lg font-bold text-red-600 dark:text-red-400">
+                        {formatCurrency(rolledOptions.chains.reduce((sum, chain) => sum + chain.total_debits_paid, 0))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Chains List */}
             {rolledOptions.chains.length === 0 ? (
               <div className="text-center py-8">
@@ -470,6 +658,17 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(chain.status)}`}>
                               {chain.status.toUpperCase()}
                             </span>
+                            {/* Strategy Badge */}
+                            {(() => {
+                              // Use chain's initial_strategy if available, otherwise first order's strategy
+                              const strategy = (chain as any).initial_strategy || 
+                                              (chain.orders && chain.orders.length > 0 && chain.orders[0].strategy);
+                              return strategy && (
+                                <span className="px-2 py-1 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-200 border border-purple-200 dark:border-purple-700">
+                                  {strategy}
+                                </span>
+                              );
+                            })()}
                             <div className="text-sm text-muted-foreground">
                               {chain.orders.length} orders ({chain.roll_count || 0} rolls)
                             </div>

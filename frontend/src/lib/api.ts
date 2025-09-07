@@ -632,6 +632,7 @@ export async function getRolledOptionsChains(params?: {
   days_back?: number
   symbol?: string
   status?: 'active' | 'closed' | 'expired'
+  strategy?: string
   min_rolls?: number
   page?: number
   limit?: number
@@ -641,6 +642,7 @@ export async function getRolledOptionsChains(params?: {
   if (params?.days_back) queryParams.append('days_back', params.days_back.toString())
   if (params?.symbol) queryParams.append('symbol', params.symbol)
   if (params?.status) queryParams.append('status', params.status)
+  if (params?.strategy) queryParams.append('strategy', params.strategy)
   if (params?.min_rolls) queryParams.append('min_rolls', params.min_rolls.toString())
   if (params?.page) queryParams.append('page', params.page.toString())
   if (params?.limit) queryParams.append('limit', params.limit.toString())
@@ -1076,9 +1078,23 @@ export async function getRolledOptionsSyncStatus(): Promise<{ status: string; la
   return response.data
 }
 
-export async function getRolledOptionsSymbols(): Promise<{ symbols: string[]; symbol_counts: Record<string, number>; total_symbols: number }> {
+export async function getRolledOptionsSymbols(): Promise<{ 
+  symbols: string[]; 
+  symbol_counts: Record<string, number>; 
+  total_symbols: number;
+  strategies: string[];
+  strategy_counts: Record<string, number>;
+  total_strategies: number;
+}> {
   const url = `/rolled-options-v2/symbols`
-  const response = await apiRequest<ApiResponse<{ symbols: string[]; symbol_counts: Record<string, number>; total_symbols: number }>>(url)
+  const response = await apiRequest<ApiResponse<{ 
+    symbols: string[]; 
+    symbol_counts: Record<string, number>; 
+    total_symbols: number;
+    strategies: string[];
+    strategy_counts: Record<string, number>;
+    total_strategies: number;
+  }>>(url)
   if (!response.data) {
     throw new ApiError(500, 'No symbols data received')
   }
