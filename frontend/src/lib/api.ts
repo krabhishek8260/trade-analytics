@@ -332,6 +332,7 @@ export interface HistoricalOptionsOrder {
   position_effect: string
   direction: string
   quantity: number
+  processed_quantity?: number
   price: number
   premium: number
   processed_premium: number

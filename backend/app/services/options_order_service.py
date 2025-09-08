@@ -712,6 +712,7 @@ class OptionsOrderService:
         symbol: Optional[str] = None,
         state: Optional[str] = None,
         strategy: Optional[str] = None,
+        option_type: Optional[str] = None,
         sort_by: str = "created_at",
         sort_order: str = "desc"
     ) -> Dict[str, Any]:
@@ -740,12 +741,25 @@ class OptionsOrderService:
                     conditions.append(OptionsOrder.state == state)
                 if strategy:
                     conditions.append(OptionsOrder.strategy.ilike(f"%{strategy}%"))
+                if option_type:
+                    # DB stores lower-case 'call'/'put'
+                    conditions.append(OptionsOrder.option_type == option_type.lower())
                 
                 # Build base query
                 base_query = select(OptionsOrder).where(and_(*conditions))
                 
                 # Add sorting
-                sort_column = getattr(OptionsOrder, sort_by, OptionsOrder.created_at)
+                allowed_sorts = {
+                    "created_at": OptionsOrder.created_at,
+                    "updated_at": OptionsOrder.updated_at,
+                    "processed_premium": OptionsOrder.processed_premium,
+                    "premium": OptionsOrder.premium,
+                    "strike_price": OptionsOrder.strike_price,
+                    "expiration_date": OptionsOrder.expiration_date,
+                    "chain_symbol": OptionsOrder.chain_symbol,
+                    "state": OptionsOrder.state,
+                }
+                sort_column = allowed_sorts.get(sort_by, OptionsOrder.created_at)
                 if sort_order.lower() == "desc":
                     base_query = base_query.order_by(desc(sort_column))
                 else:
@@ -778,13 +792,18 @@ class OptionsOrderService:
                         "direction": order.direction,
                         "processed_premium": float(order.processed_premium or 0),
                         "premium": float(order.premium or 0),
+                        # Quantity fields
+                        "processed_quantity": float(order.processed_quantity or 0),
+                        "quantity": float(order.processed_quantity or 0),
                         "legs_count": order.legs_count or 0,
                         "created_at": order.created_at.isoformat() if order.created_at else None,
                         "updated_at": order.updated_at.isoformat() if order.updated_at else None,
                         "option_type": order.option_type,
                         "strike_price": float(order.strike_price or 0),
                         "expiration_date": order.expiration_date,
+                        # Include both for compatibility with UI
                         "transaction_side": order.side,
+                        "side": order.side,
                         "position_effect": order.position_effect,
                         "type": order.type,
                         "legs_details": order.legs_details or []
@@ -811,6 +830,7 @@ class OptionsOrderService:
                         "symbol": symbol,
                         "state": state,
                         "strategy": strategy,
+                        "option_type": option_type,
                         "sort_by": sort_by,
                         "sort_order": sort_order
                     }

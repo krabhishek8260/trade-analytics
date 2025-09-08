@@ -146,6 +146,7 @@ async def get_options_orders(
             symbol=underlying_symbol,
             state=state,
             strategy=strategy,
+            option_type=option_type,
             sort_by=sort_by,
             sort_order=sort_order
         )
@@ -208,13 +209,16 @@ async def get_options_orders(
                 if order.get("option_type", "").lower() == option_type.lower()
             ]
         
-        # Sort results
-        if sort_by == "created_at":
-            reverse = sort_order.lower() == "desc"
-            filtered_orders.sort(
-                key=lambda x: x.get("created_at", ""), 
-                reverse=reverse
-            )
+        # Sort results for API fallback
+        reverse = sort_order.lower() == "desc"
+        if sort_by in ("created_at", "updated_at"):
+            filtered_orders.sort(key=lambda x: x.get(sort_by, ""), reverse=reverse)
+        elif sort_by in ("processed_premium", "premium", "strike_price"):
+            filtered_orders.sort(key=lambda x: float(x.get(sort_by, 0) or 0), reverse=reverse)
+        elif sort_by in ("expiration_date",):
+            filtered_orders.sort(key=lambda x: x.get("expiration_date", ""), reverse=reverse)
+        elif sort_by in ("chain_symbol", "state"):
+            filtered_orders.sort(key=lambda x: (x.get(sort_by) or ""), reverse=reverse)
         
         # Apply pagination to API results
         start_idx = (page - 1) * limit

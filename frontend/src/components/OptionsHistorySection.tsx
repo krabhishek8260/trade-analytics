@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { 
   getOptionsOrders, 
   getOptionsOrdersFilters,
@@ -77,11 +77,14 @@ export default function OptionsHistorySection({
     ordersDataLength: ordersData?.data?.length
   })
 
+  const requestSeq = useRef(0)
+
   const fetchOrdersData = useCallback(async (page = 1) => {
     try {
       console.log('OptionsHistorySection: fetchOrdersData called', { page, filters })
       setLoading(true)
       setError(null)
+      const currentReq = ++requestSeq.current
       
       const [ordersResponse, statusResponse] = await Promise.all([
         getOptionsOrders({
@@ -97,6 +100,12 @@ export default function OptionsHistorySection({
         getOptionsOrdersSyncStatus().catch(() => null) // Don't fail if sync status unavailable
       ])
       
+      // Only apply if this is the latest request
+      if (currentReq !== requestSeq.current) {
+        console.warn('OptionsHistorySection: stale response ignored', { page })
+        return
+      }
+
       console.log('OptionsHistorySection: API response received', { 
         ordersCount: ordersResponse?.data?.length || 0, 
         total: ordersResponse?.pagination?.total || 0,
@@ -121,7 +130,10 @@ export default function OptionsHistorySection({
       console.error('Error loading options orders:', err)
       setError(err instanceof Error ? err.message : 'Failed to fetch options orders')
     } finally {
-      setLoading(false)
+      // Only clear loading if this is the latest request
+      if (requestSeq.current === 0 || requestSeq.current) {
+        setLoading(false)
+      }
     }
   }, [filters, pageSize])
 
@@ -148,6 +160,19 @@ export default function OptionsHistorySection({
       console.error('OptionsHistorySection: Error in useEffect:', error)
     }
   }, [autoLoaded, historyExpanded, fetchOrdersData])
+
+  // Debounced fetch when filters/page/pageSize change to avoid rapid stale races
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!historyExpanded) return
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      fetchOrdersData(currentPage)
+    }, 150)
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [filters, pageSize, currentPage, historyExpanded, fetchOrdersData])
 
   const handleSync = async (forceFullSync = false) => {
     try {
@@ -196,11 +221,19 @@ export default function OptionsHistorySection({
     }))
   }
 
-  const handleFilterChange = (key: string, value: string) => {
+  const handleFilterChange = (key: string, raw: string) => {
+    // Normalize values to match backend expectations
+    const value = (() => {
+      const v = (raw ?? '').trim()
+      if (!v) return ''
+      if (key === 'symbol') return v.toUpperCase()
+      if (key === 'option_type') return v.toLowerCase()
+      if (key === 'state') return v.toLowerCase()
+      return v
+    })()
+    // Update filters and reset page; effect will fetch with fresh state
     setFilters(prev => ({ ...prev, [key]: value }))
     setCurrentPage(1)
-    // Fetch immediately when filters change (consistent with dashboard sections)
-    setTimeout(() => fetchOrdersData(1), 0)
   }
 
   const formatDateTime = (dateStr: string | null) => {
@@ -411,10 +444,12 @@ export default function OptionsHistorySection({
           <select
             value={`${filters.sort_by}_${filters.sort_order}`}
             onChange={(e) => {
-              const [sortBy, sortOrder] = e.target.value.split('_')
+              const v = e.target.value
+              const idx = v.lastIndexOf('_')
+              const sortBy = idx > 0 ? v.slice(0, idx) : v
+              const sortOrder = idx > 0 ? v.slice(idx + 1) : 'desc'
               setFilters(prev => ({ ...prev, sort_by: sortBy, sort_order: sortOrder }))
               setCurrentPage(1)
-              fetchOrdersData(1)
             }}
             className="px-3 py-2 border border-input bg-background rounded-md text-sm w-full"
           >
@@ -428,7 +463,7 @@ export default function OptionsHistorySection({
           <label className="block text-sm font-medium text-muted-foreground mb-1">Per Page</label>
           <select
             value={pageSize}
-            onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); fetchOrdersData(1) }}
+            onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1) }}
             className="px-3 py-2 border border-input bg-background rounded-md text-sm w-full"
           >
             <option value={10}>10</option>
@@ -471,7 +506,6 @@ export default function OptionsHistorySection({
                     const newPage = Math.max(1, currentPage - 1)
                     console.log('OptionsHistorySection: Previous page clicked, going to page:', newPage)
                     setCurrentPage(newPage)
-                    fetchOrdersData(newPage)
                   }}
                   disabled={!pagination.has_prev || loading}
                   className="px-4 py-2 text-sm bg-secondary/80 hover:bg-secondary text-secondary-foreground rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
@@ -486,7 +520,6 @@ export default function OptionsHistorySection({
                     const newPage = Math.min(pagination.total_pages, currentPage + 1)
                     console.log('OptionsHistorySection: Next page clicked, going to page:', newPage)
                     setCurrentPage(newPage)
-                    fetchOrdersData(newPage)
                   }}
                   disabled={!pagination.has_next || loading}
                   className="px-4 py-2 text-sm bg-secondary/80 hover:bg-secondary text-secondary-foreground rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
