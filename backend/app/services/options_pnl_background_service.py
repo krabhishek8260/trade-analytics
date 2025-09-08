@@ -320,7 +320,11 @@ class OptionsPnLBackgroundService:
         
         for position in positions:
             pnl = float(position.total_return or 0)
-            symbol = position.underlying_symbol or "UNKNOWN"
+            # Use chain_symbol as canonical ticker for positions; fallback to underlying_symbol
+            try:
+                symbol = (position.chain_symbol or position.underlying_symbol or "UNKNOWN").upper()
+            except Exception:
+                symbol = "UNKNOWN"
             
             total_pnl += pnl
             
