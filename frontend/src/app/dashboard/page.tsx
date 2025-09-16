@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { getDashboardData, checkAuthStatus, PortfolioSummary, StocksSummary, OptionsSummary, PortfolioGreeks, getPortfolioGreeks, ApiError, getRolledOptionsChains, getRolledOptionsChainDetails, OptionsChain, forceOptionsPositionsRefresh } from '@/lib/api'
+import { getDashboardData, checkAuthStatus, PortfolioSummary, StocksSummary, OptionsSummary, PortfolioGreeks, getPortfolioGreeks, ApiError, getRolledOptionsChains, getRolledOptionsChainDetails, OptionsChain, forceOptionsPositionsRefresh, getPortfolioSummary, getStocksSummary, getOptionsSummary } from '@/lib/api'
 import { AnalysisTab } from '@/components/analysis'
 import { InteractiveMetricCard } from '@/components/breakdown'
 import { RolledOptionsSection } from '@/components/RolledOptionsSection'
@@ -790,73 +790,80 @@ export default function Dashboard() {
   const fetchDashboardData = async () => {
     if (!isAuthenticated) return
 
-    setDataLoading(true)
+    // Progressive load: kick off each section and update as it arrives
     setError(null)
-    
-    try {
-      const [data, greeks] = await Promise.all([
-        getDashboardData(showChains),
-        getPortfolioGreeks().catch(err => {
-          console.warn('Failed to fetch portfolio Greeks:', err)
-          return null
-        })
-      ])
-      
-      // Check if options data is empty and retry once
-      if (!data.options || data.options.positions.length === 0) {
-        console.log('Options data is empty, forcing refresh...')
-        setRefreshing(true)
-        try {
-          // Force refresh the options positions cache
-          const refreshResult = await forceOptionsPositionsRefresh()
-          console.log('Refresh result:', refreshResult)
-          
-          if (refreshResult.success && refreshResult.fresh_data) {
-            // Fetch data again after refresh
-            const retryData = await getDashboardData(showChains)
-            if (retryData.options && retryData.options.positions.length > 0) {
-              console.log('Refresh successful, updating data...')
-              setDashboardData({ ...retryData, greeks })
-              setLastUpdated(new Date())
-              setLastDataHash(generateDataHash({ ...retryData, greeks }))
-            } else {
-              setDashboardData({ ...data, greeks })
-              setLastUpdated(new Date())
-              setLastDataHash(generateDataHash({ ...data, greeks }))
-            }
-          } else {
-            setDashboardData({ ...data, greeks })
-            setLastUpdated(new Date())
-            setLastDataHash(generateDataHash({ ...data, greeks }))
-          }
-        } catch (refreshError) {
-          console.error('Refresh failed:', refreshError)
-          setDashboardData({ ...data, greeks })
-          setLastUpdated(new Date())
-          setLastDataHash(generateDataHash({ ...data, greeks }))
-        } finally {
-          setRefreshing(false)
-        }
-      } else {
-        setDashboardData({ ...data, greeks })
-        setLastUpdated(new Date())
-        setLastDataHash(generateDataHash({ ...data, greeks }))
-      }
-    } catch (error) {
-      console.error('Failed to fetch dashboard data:', error)
-      if (error instanceof ApiError && error.statusCode === 401) {
-        // Authentication expired
-        localStorage.removeItem('robinhood_authenticated')
-        localStorage.removeItem('auth_token')
-        localStorage.removeItem('user_info')
-        setIsAuthenticated(false)
-        router.push('/login')
-      } else {
-        setError(error instanceof Error ? error.message : 'Failed to load data')
-      }
-    } finally {
-      setDataLoading(false)
+    // Only show the global loader on the first paint when no sections are ready
+    const isFirstPaint = !dashboardData.portfolio && !dashboardData.stocks && !dashboardData.options
+    if (isFirstPaint) setDataLoading(true)
+
+    const updateData = (partial: Partial<DashboardData>) => {
+      setDashboardData(prev => ({
+        portfolio: partial.portfolio !== undefined ? partial.portfolio : prev.portfolio,
+        stocks: partial.stocks !== undefined ? partial.stocks : prev.stocks,
+        options: partial.options !== undefined ? partial.options : prev.options,
+        greeks: partial.greeks !== undefined ? partial.greeks : prev.greeks,
+      }))
+      setLastUpdated(new Date())
     }
+
+    // Track outstanding requests so we can reliably stop loading
+    let pending = 0
+    const start = () => { pending += 1 }
+    const done = () => {
+      pending = Math.max(0, pending - 1)
+      // Only flip the global loader off if this was the initial paint
+      if (isFirstPaint && pending === 0) setDataLoading(false)
+    }
+    // Safety timer: never keep the global loader forever on first paint
+    const safety = isFirstPaint ? setTimeout(() => setDataLoading(false), 4000) : null
+
+    // Start requests without awaiting so UI can render partials
+    start()
+    getPortfolioSummary()
+      .then(p => updateData({ portfolio: p }))
+      .catch(err => { console.warn('Portfolio summary failed', err) })
+      .finally(done)
+
+    start()
+    getStocksSummary()
+      .then(s => updateData({ stocks: s }))
+      .catch(err => { console.warn('Stocks summary failed', err) })
+      .finally(done)
+
+    const loadOptions = async () => {
+      try {
+        start()
+        const o = await getOptionsSummary(showChains)
+        if (!o || o.positions.length === 0) {
+          setRefreshing(true)
+          try {
+            const refreshResult = await forceOptionsPositionsRefresh()
+            if (refreshResult.success && refreshResult.fresh_data) {
+              const retry = await getOptionsSummary(showChains)
+              updateData({ options: retry })
+            } else {
+              updateData({ options: o })
+            }
+          } finally {
+            setRefreshing(false)
+            done()
+          }
+        } else {
+          updateData({ options: o })
+          done()
+        }
+      } catch (e) {
+        console.warn('Options summary failed', e)
+        done()
+      }
+    }
+    loadOptions()
+
+    start()
+    getPortfolioGreeks()
+      .then(g => updateData({ greeks: g }))
+      .catch(err => console.warn('Portfolio greeks failed', err))
+      .finally(() => { done(); if (safety) clearTimeout(safety as any) })
   }
 
   const handleConnectAccount = () => {
@@ -1186,7 +1193,9 @@ export default function Dashboard() {
                 </div>
 
                 <div className="p-6">
-                  {dataLoading ? (
+                  {dataLoading && !(
+                    dashboardData.portfolio || dashboardData.stocks || dashboardData.options
+                  ) ? (
                     <div className="space-y-4">
                       <div className="animate-pulse">
                         <div className="h-4 bg-muted rounded w-1/4 mb-4"></div>

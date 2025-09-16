@@ -23,6 +23,8 @@ export default function NetPremiumBreakdownDrawer({ isOpen, onClose, formatCurre
   const [error, setError] = useState<string | undefined>()
   const [progress, setProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 })
   const [allChains, setAllChains] = useState<OptionsChain[]>([])
+  const [symbolQuery, setSymbolQuery] = useState('')
+  const [strategyQuery, setStrategyQuery] = useState('')
   
   const bucketClass = (value: number, maxAbs: number, kind: 'cell' | 'chip' = 'cell') => {
     if (!value) return kind === 'cell' ? 'heatmap-cell empty' : 'heatmap-chip empty'
@@ -72,12 +74,18 @@ export default function NetPremiumBreakdownDrawer({ isOpen, onClose, formatCurre
   }, [isOpen, daysBack, status])
 
   const allSymbols = useMemo(() => {
-    return Array.from(new Set(allChains.map(c => c.underlying_symbol))).sort()
-  }, [allChains])
+    const base = Array.from(new Set(allChains.map(c => c.underlying_symbol))).sort()
+    if (!symbolQuery) return base
+    const q = symbolQuery.toUpperCase()
+    return base.filter(s => s.toUpperCase().includes(q))
+  }, [allChains, symbolQuery])
 
   const allStrategies = useMemo(() => {
-    return Array.from(new Set(allChains.map(c => (c as any).initial_strategy).filter(Boolean))).sort()
-  }, [allChains])
+    const base = Array.from(new Set(allChains.map(c => (c as any).initial_strategy).filter(Boolean))).sort()
+    if (!strategyQuery) return base
+    const q = strategyQuery.toLowerCase()
+    return base.filter(s => s.toLowerCase().includes(q))
+  }, [allChains, strategyQuery])
 
   const filteredChains = useMemo(() => {
     return allChains.filter(c => {
@@ -161,7 +169,7 @@ export default function NetPremiumBreakdownDrawer({ isOpen, onClose, formatCurre
   return (
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="absolute right-0 top-0 h-full w-full max-w-4xl bg-background border-l border-border shadow-xl flex flex-col">
+      <div className="absolute right-0 top-0 h-full w-full max-w-5xl bg-background border-l border-border shadow-xl flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b">
           <div>
@@ -189,10 +197,22 @@ export default function NetPremiumBreakdownDrawer({ isOpen, onClose, formatCurre
         </div>
 
         {/* Controls */}
-        <div className="p-4 border-b grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="p-6 border-b grid grid-cols-1 md:grid-cols-3 gap-6">
           <div>
-            <div className="text-xs font-medium text-muted-foreground mb-2">Symbols</div>
-            <div className="max-h-36 overflow-auto border rounded p-2 space-y-1">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-muted-foreground">Symbols</label>
+              <div className="flex items-center gap-2">
+                <button className="text-xs px-2 py-1 border rounded hover:bg-muted" onClick={() => setSelectedSymbols(allSymbols)}>Select All</button>
+                <button className="text-xs px-2 py-1 border rounded hover:bg-muted" onClick={() => setSelectedSymbols([])}>Clear</button>
+              </div>
+            </div>
+            <input
+              value={symbolQuery}
+              onChange={(e) => setSymbolQuery(e.target.value)}
+              placeholder="Search symbols"
+              className="form-input h-8 mb-2"
+            />
+            <div className="max-h-40 overflow-auto border rounded p-2 space-y-1">
               {allSymbols.map(sym => (
                 <label key={sym} className="flex items-center gap-2 text-sm">
                   <input
@@ -209,8 +229,20 @@ export default function NetPremiumBreakdownDrawer({ isOpen, onClose, formatCurre
             </div>
           </div>
           <div>
-            <div className="text-xs font-medium text-muted-foreground mb-2">Strategies</div>
-            <div className="max-h-36 overflow-auto border rounded p-2 space-y-1">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-muted-foreground">Strategies</label>
+              <div className="flex items-center gap-2">
+                <button className="text-xs px-2 py-1 border rounded hover:bg-muted" onClick={() => setSelectedStrategies(allStrategies)}>Select All</button>
+                <button className="text-xs px-2 py-1 border rounded hover:bg-muted" onClick={() => setSelectedStrategies([])}>Clear</button>
+              </div>
+            </div>
+            <input
+              value={strategyQuery}
+              onChange={(e) => setStrategyQuery(e.target.value)}
+              placeholder="Search strategies"
+              className="form-input h-8 mb-2"
+            />
+            <div className="max-h-40 overflow-auto border rounded p-2 space-y-1">
               {allStrategies.map(st => (
                 <label key={st} className="flex items-center gap-2 text-sm">
                   <input
@@ -226,8 +258,8 @@ export default function NetPremiumBreakdownDrawer({ isOpen, onClose, formatCurre
               )}
             </div>
           </div>
-          <div className="flex flex-col gap-2">
-            <div className="text-xs font-medium text-muted-foreground">View</div>
+          <div className="flex flex-col gap-3">
+            <label className="text-sm font-medium text-muted-foreground">View</label>
             <div className="inline-flex rounded-md border overflow-hidden w-max">
               {(['symbol','strategy','matrix'] as ViewMode[]).map(v => (
                 <button
@@ -253,6 +285,13 @@ export default function NetPremiumBreakdownDrawer({ isOpen, onClose, formatCurre
               >
                 Sort: {sortDesc ? 'Desc' : 'Asc'}
               </button>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span>Legend:</span>
+              <span className="inline-block w-4 h-3 rounded bg-green-700"></span>
+              <span>Profit</span>
+              <span className="inline-block w-4 h-3 rounded bg-red-700 ml-2"></span>
+              <span>Loss</span>
             </div>
           </div>
         </div>

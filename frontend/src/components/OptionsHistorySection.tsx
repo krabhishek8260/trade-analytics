@@ -176,16 +176,32 @@ export default function OptionsHistorySection({
 
   const handleSync = async (forceFullSync = false) => {
     try {
+      console.log('OptionsHistorySection: handleSync called', { forceFullSync })
+      console.log('OptionsHistorySection: Setting syncing state to true')
       setSyncing(true)
       setShowProgress(true)
       setError(null)
-      
-      await triggerOptionsOrdersSync(forceFullSync, forceFullSync ? 365 : 30)
-      
-      // Note: Progress indicator will handle completion and data refresh
-      
+
+      console.log('OptionsHistorySection: About to call triggerOptionsOrdersSync')
+      const result = await triggerOptionsOrdersSync(forceFullSync, forceFullSync ? 365 : 30)
+      console.log('OptionsHistorySection: Sync completed successfully', result)
+
+      console.log('OptionsHistorySection: Refreshing data after sync')
+      // Refresh the data after successful sync
+      await fetchOrdersData(currentPage)
+
+      console.log('OptionsHistorySection: Resetting sync state')
+      // Reset sync state
+      setSyncing(false)
+      setShowProgress(false)
+
     } catch (err) {
-      console.error('Error triggering sync:', err)
+      console.error('OptionsHistorySection: Error triggering sync:', err)
+      console.log('OptionsHistorySection: Error details:', {
+        name: err instanceof Error ? err.name : 'Unknown',
+        message: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined
+      })
       setError(err instanceof Error ? err.message : 'Failed to sync orders')
       setSyncing(false)
       setShowProgress(false)
@@ -376,11 +392,14 @@ export default function OptionsHistorySection({
             {loading ? 'Loading...' : 'Refresh'}
           </button>
           <button
-            onClick={() => handleSync(true)}
+            onClick={() => {
+              console.log('OptionsHistorySection: Full Sync button clicked')
+              handleSync(true)
+            }}
             disabled={syncing}
             className="px-3 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
           >
-            Full Sync
+            {syncing ? 'Syncing...' : 'Full Sync'}
           </button>
         </div>
       </div>

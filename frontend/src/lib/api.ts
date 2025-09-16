@@ -887,23 +887,30 @@ export interface BreakdownRequest {
 }
 
 // Enhanced API request function for POST requests
-async function apiPostRequest<T>(endpoint: string, data: any): Promise<T> {
+async function apiPostRequest<T>(endpoint: string, data: any, timeout: number = 60000): Promise<T> {
   try {
+    // Create an AbortController for timeout handling
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), timeout)
+
     const headers = getAuthHeaders()
     headers['Content-Type'] = 'application/json'
-    
+
     const response = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
+      signal: controller.signal,
       headers,
       body: JSON.stringify(data)
     })
-    
+
+    clearTimeout(timeoutId)
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))
       const message = errorData.detail || errorData.message || `HTTP ${response.status}`
       throw new ApiError(response.status, message)
     }
-    
+
     const responseData = await response.json()
     return responseData
   } catch (error) {
@@ -1073,9 +1080,10 @@ export async function triggerOptionsOrdersSync(
   const queryParams = new URLSearchParams()
   if (forceFullSync) queryParams.append('force_full_sync', 'true')
   if (daysBack !== 30) queryParams.append('days_back', daysBack.toString())
-  
+
   const url = `/options/orders/sync${queryParams.toString() ? '?' + queryParams.toString() : ''}`
-  const response = await apiPostRequest<ApiResponse<{ orders_processed: number; orders_stored: number; sync_time: string; sync_type: string }>>(url, {})
+  // Use 2 minute timeout for sync operations
+  const response = await apiPostRequest<ApiResponse<{ orders_processed: number; orders_stored: number; sync_time: string; sync_type: string }>>(url, {}, 120000)
   if (!response.data) {
     throw new ApiError(500, 'No sync response received')
   }
