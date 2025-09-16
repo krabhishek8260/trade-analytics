@@ -130,7 +130,15 @@ class OptionsOrderService:
                 # Clear progress callback
                 if user_id in self.progress_callbacks:
                     del self.progress_callbacks[user_id]
-                
+
+                # Invalidate cached options orders so UI sees fresh data
+                try:
+                    cleared = await cache.clear_pattern("options:orders:*")
+                    if cleared:
+                        logger.info(f"Cleared {cleared} cached options:orders entries after sync")
+                except Exception as cache_error:
+                    logger.warning(f"Could not clear options orders cache: {cache_error}")
+
                 # Update progress: Complete
                 self._update_progress(user_id, {
                     "status": "complete",
