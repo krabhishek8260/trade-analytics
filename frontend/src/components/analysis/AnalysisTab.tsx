@@ -237,7 +237,7 @@ export default function AnalysisTab({ formatCurrency, formatPercent }: AnalysisT
 
   const uniqueTickers = Array.from(new Set([
     ...orders.map(order => order.underlying_symbol).filter((s): s is string => Boolean(s)),
-    ...allPositions.map(pos => pos.underlying_symbol).filter((s): s is string => Boolean(s))
+    ...allPositions.map(pos => pos.chain_symbol).filter((s): s is string => Boolean(s))
   ])).sort()
   
   const uniqueStrategies = Array.from(new Set([
