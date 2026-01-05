@@ -398,7 +398,7 @@ async def get_orders_sync_status(
 )
 async def trigger_orders_sync(
     force_full_sync: bool = Query(False, description="Force full sync instead of incremental"),
-    days_back: int = Query(30, ge=1, le=365, description="Days to sync back for full sync"),
+    days_back: int = Query(30, ge=1, le=365, description="Deprecated: ignored; full history is synced"),
     current_user_id: UUID = Depends(get_current_user_id),
     db = Depends(get_db),
     rh_service: RobinhoodService = Depends(get_robinhood_service)
@@ -415,7 +415,7 @@ async def trigger_orders_sync(
         result = await options_service.sync_options_orders(
             user_id=str(current_user_id),
             force_full_sync=force_full_sync,
-            days_back=days_back
+            days_back=None
         )
         
         if result["success"]:

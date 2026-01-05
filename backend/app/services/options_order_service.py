@@ -47,7 +47,7 @@ class OptionsOrderService:
         self, 
         user_id: str, 
         force_full_sync: bool = False,
-        days_back: int = 30,
+        days_back: Optional[int] = None,
         progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None
     ) -> Dict[str, Any]:
         """
@@ -75,9 +75,9 @@ class OptionsOrderService:
                 if not force_full_sync:
                     last_sync_time = await self._get_last_sync_time(db, user_id)
                 
-                # If no last sync or force full sync, go back specified days
-                if last_sync_time is None:
-                    since_time = datetime.now() - timedelta(days=days_back)
+                # If no last sync or force full sync, fetch full history (no lookback)
+                if last_sync_time is None or force_full_sync:
+                    since_time = None  # Full history
                     sync_type = "full"
                 else:
                     # Incremental sync: get orders since last sync minus 1 day buffer
@@ -92,16 +92,12 @@ class OptionsOrderService:
                     "message": f"Fetching orders from Robinhood API ({sync_type} sync)...",
                     "progress": 10,
                     "sync_type": sync_type,
-                    "since_time": since_time.isoformat()
+                    "since_time": since_time.isoformat() if since_time else "all"
                 })
                 
-                # Fetch orders from Robinhood with smart limits
-                # Use smaller limit for initial sync to prevent timeouts
-                limit = 1000 if days_back <= 90 else 2000
-                orders_response = await self.rh_service.get_options_orders(
-                    limit=limit,
-                    since_time=since_time
-                )
+                # Fetch orders from Robinhood; for full history, do not limit
+                limit: Optional[int] = None if since_time is None else 2000
+                orders_response = await self.rh_service.get_options_orders(limit=limit, since_time=since_time)
                 
                 if not orders_response["success"]:
                     # Check if it's an authentication error, then use demo data
@@ -227,7 +223,7 @@ class OptionsOrderService:
     async def get_rolled_options_chains_from_db(
         self,
         user_id: str,
-        days_back: int = 365,
+        days_back: Optional[int] = None,
         symbol: Optional[str] = None,
         status: Optional[str] = None,
         min_orders: int = 2
@@ -238,15 +234,17 @@ class OptionsOrderService:
         try:
             async for db in get_db():
                 # Build base query
-                since_time = datetime.now() - timedelta(days=days_back)
-                
                 conditions = [
                     OptionsOrder.user_id == user_id,
-                    OptionsOrder.order_created_at >= since_time,
                     OptionsOrder.chain_id.isnot(None),
                     OptionsOrder.chain_id != "",
                     OptionsOrder.state.notin_(['cancelled', 'canceled', 'rejected', 'failed'])
                 ]
+
+                # Apply time filter only if days_back provided
+                if days_back is not None and days_back > 0:
+                    since_time = datetime.now() - timedelta(days=days_back)
+                    conditions.append(OptionsOrder.order_created_at >= since_time)
                 
                 if symbol:
                     conditions.append(OptionsOrder.underlying_symbol == symbol.upper())
@@ -430,12 +428,14 @@ class OptionsOrderService:
                 
                 # Use PostgreSQL upsert (ON CONFLICT DO UPDATE)
                 insert_stmt = insert(OptionsOrder).values(order_record)
+                # Allow user_id to refresh so records follow the authenticated account even
+                # if fallback users inserted the order earlier.
                 upsert_stmt = insert_stmt.on_conflict_do_update(
                     index_elements=["order_id"],
                     set_={
-                        key: insert_stmt.excluded[key] 
-                        for key in order_record.keys() 
-                        if key not in ["id", "user_id", "order_id", "db_created_at"]
+                        key: insert_stmt.excluded[key]
+                        for key in order_record.keys()
+                        if key not in ["id", "order_id", "db_created_at"]
                     }
                 )
                 
@@ -652,39 +652,62 @@ class OptionsOrderService:
                 stored_count = 0
                 for chain in demo_chains:
                     for order in chain["orders"]:
+                        # Map only to existing model columns
                         order_record = {
                             "user_id": user_id,
                             "order_id": order["order_id"],
                             "chain_id": chain["chain_id"],
                             "chain_symbol": chain["underlying_symbol"],
-                            "underlying_symbol": chain["underlying_symbol"],
-                            "direction": order["direction"],
-                            "position_effect": order["position_effect"],
-                            "processed_premium": order["processed_premium"],
-                            "quantity": order["quantity"],
                             "state": "filled",
                             "type": "limit",
+                            "processed_quantity": order["quantity"],
+                            "processed_premium": order["processed_premium"],
+                            "premium": None,
+                            "direction": order["direction"],
                             "strategy": "DEMO",
+                            "opening_strategy": None,
+                            "closing_strategy": None,
+                            "created_at": order["created_at"],
+                            "updated_at": order["created_at"],
                             "legs_count": 1,
-                            "executions_count": 1,
+                            "legs_details": [
+                                {
+                                    "side": "sell" if order["direction"] == "credit" else "buy",
+                                    "position_effect": order["position_effect"],
+                                    "option_type": "call",
+                                    "strike_price": 150.0,
+                                    "expiration_date": "2024-12-20",
+                                }
+                            ],
+                            "leg_index": 0,
+                            "leg_id": f"demo-leg-{order['order_id']}",
+                            "side": "sell" if order["direction"] == "credit" else "buy",
+                            "position_effect": order["position_effect"],
                             "option_type": "call",
                             "strike_price": 150.0,
                             "expiration_date": "2024-12-20",
-                            "transaction_side": "sell" if order["direction"] == "credit" else "buy",
-                            "order_created_at": order["created_at"],
-                            "order_updated_at": order["created_at"],
+                            "long_strategy_code": None,
+                            "short_strategy_code": None,
                             "raw_data": {"demo": True}
                         }
                         
-                        # Use PostgreSQL upsert
+                        # Use PostgreSQL upsert (only include known columns in update set)
                         insert_stmt = insert(OptionsOrder).values(order_record)
+                        allowed_update_keys = {
+                            "state", "type", "processed_quantity", "processed_premium", "premium",
+                            "direction", "strategy", "opening_strategy", "closing_strategy",
+                            "created_at", "updated_at", "legs_count", "legs_details",
+                            "leg_index", "leg_id", "side", "position_effect", "option_type",
+                            "strike_price", "expiration_date", "long_strategy_code", "short_strategy_code",
+                            "raw_data", "chain_id", "chain_symbol"
+                        }
+                        set_dict = {
+                            key: getattr(insert_stmt.excluded, key)
+                            for key in order_record.keys() if key in allowed_update_keys
+                        }
                         upsert_stmt = insert_stmt.on_conflict_do_update(
                             index_elements=["order_id"],
-                            set_={
-                                key: insert_stmt.excluded[key] 
-                                for key in order_record.keys() 
-                                if key not in ["id", "user_id", "order_id", "created_at"]
-                            }
+                            set_=set_dict
                         )
                         await db.execute(upsert_stmt)
                         stored_count += 1

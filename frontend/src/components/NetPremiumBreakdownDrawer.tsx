@@ -8,13 +8,12 @@ interface NetPremiumBreakdownDrawerProps {
   isOpen: boolean
   onClose: () => void
   formatCurrency: (value: number) => string
-  daysBack?: number
   status?: 'active' | 'closed' | 'expired' | 'all'
 }
 
 type ViewMode = 'symbol' | 'strategy' | 'matrix'
 
-export default function NetPremiumBreakdownDrawer({ isOpen, onClose, formatCurrency, daysBack = 180, status }: NetPremiumBreakdownDrawerProps) {
+export default function NetPremiumBreakdownDrawer({ isOpen, onClose, formatCurrency, status }: NetPremiumBreakdownDrawerProps) {
   const [selectedSymbols, setSelectedSymbols] = useState<string[]>([])
   const [selectedStrategies, setSelectedStrategies] = useState<string[]>([])
   const [view, setView] = useState<ViewMode>('symbol')
@@ -43,7 +42,7 @@ export default function NetPremiumBreakdownDrawer({ isOpen, onClose, formatCurre
         setLoadingAll(true)
         setError(undefined)
         setProgress({ current: 0, total: 0 })
-        const baseParams: any = { days_back: daysBack, page: 1, limit: 100, use_database: true }
+        const baseParams: any = { page: 1, limit: 100, use_database: true }
         if (status && status !== 'all') baseParams.status = status
         const first = await getRolledOptionsChains(baseParams)
         if (cancelled) return
@@ -71,7 +70,7 @@ export default function NetPremiumBreakdownDrawer({ isOpen, onClose, formatCurre
     }
     run()
     return () => { cancelled = true }
-  }, [isOpen, daysBack, status])
+  }, [isOpen, status])
 
   const allSymbols = useMemo(() => {
     const base = Array.from(new Set(allChains.map(c => c.underlying_symbol))).sort()

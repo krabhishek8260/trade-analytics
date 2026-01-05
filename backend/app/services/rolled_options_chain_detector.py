@@ -63,7 +63,7 @@ class RolledOptionsChainDetector:
     async def detect_chains_from_database(
         self,
         user_id: str,
-        days_back: int = 365,
+        days_back: Optional[int] = None,
         symbol: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
@@ -90,7 +90,7 @@ class RolledOptionsChainDetector:
             # Get orders from database
             orders = await self.options_service.get_orders_for_chain_detection(
                 user_id=user_id,
-                days_back=days_back if days_back else 0,
+                days_back=days_back if days_back is not None else None,
                 symbol=symbol
             )
             

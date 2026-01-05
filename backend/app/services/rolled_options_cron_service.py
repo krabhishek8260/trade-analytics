@@ -210,13 +210,13 @@ class RolledOptionsCronService:
 
             # Determine date range for processing
             if full_sync:
-                # Full sync - process all available data
-                days_back = 365 * 2  # 2 years max
-                logger.info(f"Full sync for user {user_id} - processing {days_back} days")
+                # Full sync - process full history
+                days_back = None
+                logger.info(f"Full sync for user {user_id} - processing full history")
             else:
-                # Incremental sync - only recent data
-                days_back = 30
-                logger.info(f"Incremental sync for user {user_id} - processing {days_back} days")
+                # Incremental sync - rely on DB delta, no explicit lookback cutoff
+                days_back = None
+                logger.info(f"Incremental sync for user {user_id} - processing since last update")
             
             # Load orders data
             orders_data = await self._load_user_orders(user_id, days_back)
@@ -234,11 +234,11 @@ class RolledOptionsCronService:
                 }
             
             # Use RolledOptionsChainDetector (database-first + heuristics) to detect chains
-            # For full sync, fetch all available orders (no lookback limit)
-            detection_days = None if full_sync else days_back
+            # Detect across full DB history
+            detection_days = None
             chains = await self.chain_detector.detect_chains_from_database(
                 user_id=user_id,
-                days_back=detection_days if detection_days is not None else 0,  # passed through; service handles None/0 as all
+                days_back=None,
                 symbol=None
             )
             logger.info(f"🔍 Detector returned {len(chains)} chains for user {user_id}")
@@ -346,7 +346,7 @@ class RolledOptionsCronService:
                 'chains_processed': 0
             }
     
-    async def _load_user_orders(self, user_id: str, days_back: int) -> List[Dict[str, Any]]:
+    async def _load_user_orders(self, user_id: str, days_back: Optional[int]) -> List[Dict[str, Any]]:
         """
         Load orders for chain detection - uses database as primary data source
         """
@@ -355,7 +355,7 @@ class RolledOptionsCronService:
             logger.info(f"🔍 Loading orders from database for enhanced detection (user: {user_id}, days_back: {days_back})")
             
             # For enhanced detection, load with extended lookback to find historical opening orders
-            extended_days_back = max(days_back, 365)  # At least 1 year of data for backward tracing
+            extended_days_back = None  # always full history from DB for enhanced detection
             
             database_orders = await self._load_orders_from_database(user_id, extended_days_back)
             if database_orders:
@@ -407,7 +407,7 @@ class RolledOptionsCronService:
             logger.error(f"Error loading orders for user {user_id}: {e}")
             return []
 
-    async def _load_orders_from_database(self, user_id: str, days_back: int) -> List[Dict[str, Any]]:
+    async def _load_orders_from_database(self, user_id: str, days_back: Optional[int]) -> List[Dict[str, Any]]:
         """
         Load orders from the database options_orders table
         """
@@ -418,7 +418,7 @@ class RolledOptionsCronService:
                 cutoff_date = datetime.now() - timedelta(days=days_back)
                 
                 # Query filled options orders from the database
-                result = await db.execute(text('''
+                base_sql = '''
                     SELECT 
                         order_id,
                         chain_symbol,
@@ -440,12 +440,14 @@ class RolledOptionsCronService:
                     WHERE user_id = :user_id
                     AND state = 'filled'
                     AND legs_count > 0
-                    AND created_at >= :cutoff_date
-                    ORDER BY created_at DESC
-                '''), {
-                    'user_id': user_id,
-                    'cutoff_date': cutoff_date
-                })
+                '''
+                params = {'user_id': user_id}
+                if days_back is not None and days_back > 0:
+                    base_sql += " AND created_at >= :cutoff_date"
+                    from datetime import datetime, timedelta
+                    params['cutoff_date'] = datetime.now() - timedelta(days=days_back)
+                base_sql += " ORDER BY created_at DESC"
+                result = await db.execute(text(base_sql), params)
                 
                 db_orders = result.fetchall()
                 logger.info(f"Found {len(db_orders)} filled options orders in database for user {user_id}")

@@ -656,7 +656,6 @@ export async function getFilteredOptionsPositions(params?: {
 
 // Rolled Options API functions
 export async function getRolledOptionsChains(params?: {
-  days_back?: number
   symbol?: string
   status?: 'active' | 'closed' | 'expired'
   strategy?: string
@@ -666,7 +665,6 @@ export async function getRolledOptionsChains(params?: {
   use_database?: boolean
 }): Promise<RolledOptionsResponse> {
   const queryParams = new URLSearchParams()
-  if (params?.days_back) queryParams.append('days_back', params.days_back.toString())
   if (params?.symbol) queryParams.append('symbol', params.symbol)
   if (params?.status) queryParams.append('status', params.status)
   if (params?.strategy) queryParams.append('strategy', params.strategy)
@@ -678,19 +676,8 @@ export async function getRolledOptionsChains(params?: {
   
   const url = `/rolled-options-v2/chains${queryParams.toString() ? '?' + queryParams.toString() : ''}`
   
-  // Use dynamic timeout based on days_back and pagination
-  // Rolled options processing is complex and can take longer
-  let timeout = 120000 // Default 2 minutes
-  
-  if (params?.days_back) {
-    if (params.days_back <= 30) {
-      timeout = params?.page ? 60000 : 120000 // 1-2 minutes for small range
-    } else if (params.days_back <= 90) {
-      timeout = params?.page ? 120000 : 180000 // 2-3 minutes for medium range
-    } else {
-      timeout = params?.page ? 180000 : 300000 // 3-5 minutes for large range
-    }
-  }
+  // Static timeout; backend uses full-history DB
+  const timeout = params?.page ? 60000 : 120000
   const response = await apiRequest<ApiResponse<RolledOptionsResponse>>(url, timeout)
   if (!response.data) {
     throw new ApiError(500, 'No rolled options data received')
@@ -707,10 +694,7 @@ export async function getRolledOptionsChainDetails(chainId: string): Promise<Opt
 }
 
 export async function getRolledOptionsSummary(daysBack?: number): Promise<RolledOptionsSummary> {
-  const queryParams = new URLSearchParams()
-  if (daysBack) queryParams.append('days_back', daysBack.toString())
-  
-  const url = `/rolled-options-v2/summary${queryParams.toString() ? '?' + queryParams.toString() : ''}`
+  const url = `/rolled-options-v2/summary`
   const response = await apiRequest<ApiResponse<RolledOptionsSummary>>(url)
   if (!response.data) {
     throw new ApiError(500, 'No rolled options summary received')
@@ -719,11 +703,9 @@ export async function getRolledOptionsSummary(daysBack?: number): Promise<Rolled
 }
 
 export async function getSymbolRolledChains(symbol: string, params?: {
-  days_back?: number
   status?: 'active' | 'closed' | 'expired'
 }): Promise<RolledOptionsResponse> {
   const queryParams = new URLSearchParams()
-  if (params?.days_back) queryParams.append('days_back', params.days_back.toString())
   if (params?.status) queryParams.append('status', params.status)
   
   const url = `/rolled-options-v2/symbols/${symbol}/chains${queryParams.toString() ? '?' + queryParams.toString() : ''}`

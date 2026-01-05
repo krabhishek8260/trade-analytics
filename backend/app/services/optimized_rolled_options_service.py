@@ -131,7 +131,7 @@ class OptimizedRolledOptionsService:
             # Try database first
             db_result = await self.options_order_service.get_rolled_options_chains_from_db(
                 user_id=user_id,
-                days_back=days_back,
+                days_back=None,  # analyze full history from DB
                 symbol=symbol,
                 status=status,
                 min_orders=min_orders
@@ -160,7 +160,7 @@ class OptimizedRolledOptionsService:
                 sync_task = asyncio.create_task(
                     self.options_order_service.sync_options_orders(
                         user_id=user_id,
-                        days_back=sync_days,
+                        days_back=None,  # full history on first sync
                         force_full_sync=False
                     )
                 )
@@ -174,7 +174,7 @@ class OptimizedRolledOptionsService:
                     # Try database again after sync
                     return await self.options_order_service.get_rolled_options_chains_from_db(
                         user_id=user_id,
-                        days_back=days_back,
+                        days_back=None,  # analyze full history from DB
                         symbol=symbol,
                         status=status,
                         min_orders=min_orders
@@ -188,7 +188,7 @@ class OptimizedRolledOptionsService:
             # If sync fails, fallback to fast service with limited data
             logger.info("Falling back to fast service due to sync issues")
             return await self.fast_service.get_rolled_options_chains_fast(
-                days_back=min(days_back, 30),  # Very limited for fallback
+                days_back=min(days_back, 30) if days_back else 30,  # fallback still limited
                 symbol=symbol,
                 status=status,
                 min_orders=min_orders,

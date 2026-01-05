@@ -42,49 +42,498 @@ Modern trading analytics application built with FastAPI, Next.js, and Supabase.
 
 ### Prerequisites
 
-- Docker and Docker Compose
-- Node.js 18+ (for frontend development)
-- Python 3.11+ (for backend development)
+Before you begin, ensure you have the following installed:
 
-### Local Development
+#### Required Software
 
-1. Clone the repository:
+1. **Docker Desktop** (Recommended for easiest setup)
+   - macOS: [Download Docker Desktop for Mac](https://www.docker.com/products/docker-desktop)
+   - Windows: [Download Docker Desktop for Windows](https://www.docker.com/products/docker-desktop)
+   - Linux: [Install Docker Engine](https://docs.docker.com/engine/install/)
+
+2. **Node.js 18+** (for frontend development)
+   - Download from [nodejs.org](https://nodejs.org/)
+   - Or install via [nvm](https://github.com/nvm-sh/nvm):
+     ```bash
+     nvm install 18
+     nvm use 18
+     ```
+
+3. **Python 3.11+** (for backend development)
+   - macOS: `brew install python@3.11`
+   - Windows: [Download from python.org](https://www.python.org/downloads/)
+   - Linux: `sudo apt install python3.11`
+
+4. **Git**
+   - macOS: `brew install git` or included with Xcode Command Line Tools
+   - Windows: [Download Git for Windows](https://git-scm.com/download/win)
+   - Linux: `sudo apt install git`
+
+### Local Setup
+
+#### Option 1: Docker (Recommended - Easiest)
+
+This method runs everything in containers and requires minimal setup. **Perfect for first-time setup!**
+
+**Step-by-step setup from scratch:**
+
+1. **Install Docker Desktop**
+   - Download and install Docker Desktop for your OS (see Prerequisites above)
+   - **Important**: Start Docker Desktop and wait for it to be running (you'll see the Docker icon in your menu bar/system tray)
+
+2. **Clone the repository:**
+   ```bash
+   git clone https://github.com/krabhishek8260/trade-analytics.git
+   cd trade-analytics
+   ```
+
+3. **Create environment files (optional but recommended):**
+
+   Create `backend/.env` with minimal configuration:
+   ```bash
+   # Create the backend .env file
+   cat > backend/.env << 'EOF'
+   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/tradeanalytics
+   REDIS_URL=redis://localhost:6379
+   JWT_SECRET=local-dev-secret-key-change-in-production
+   EOF
+   ```
+
+   Create `frontend/.env.local` (optional):
+   ```bash
+   # Create the frontend .env.local file
+   cat > frontend/.env.local << 'EOF'
+   NEXT_PUBLIC_API_URL=http://localhost:8000
+   EOF
+   ```
+
+   **Note:** You can skip this step and the app will use defaults from `docker-compose.yml`
+
+4. **Start all services:**
+   ```bash
+   docker-compose up -d
+   ```
+
+   This command will:
+   - Download required Docker images (first time only, ~5 minutes)
+   - Create PostgreSQL database container
+   - Create Redis cache container
+   - Build and start Backend API container
+   - Build and start Frontend container
+
+   **First-time setup takes 5-10 minutes** to download images and build containers.
+
+5. **Verify everything is running:**
+   ```bash
+   docker-compose ps
+   ```
+
+   You should see all 4 services with status "Up" and "healthy":
+   - `tradeanalytics_postgres`
+   - `tradeanalytics_redis`
+   - `tradeanalytics_backend`
+   - `tradeanalytics_frontend`
+
+6. **Access the application:**
+   - **Frontend**: http://localhost:3000 (Main application)
+   - **Backend API**: http://localhost:8000 (API endpoints)
+   - **API Documentation**: http://localhost:8000/docs (Interactive API docs)
+
+7. **View logs (if needed):**
+   ```bash
+   # View all logs
+   docker-compose logs -f
+
+   # View specific service logs
+   docker logs tradeanalytics_frontend
+   docker logs tradeanalytics_backend
+   ```
+
+8. **Stop the services when done:**
+   ```bash
+   # Stop all services (preserves data)
+   docker-compose down
+
+   # Stop and remove all data (clean slate)
+   docker-compose down -v
+   ```
+
+**Troubleshooting:**
+- If ports are already in use, stop other services using ports 3000, 8000, 5432, or 6379
+- If containers fail to start, check logs: `docker-compose logs`
+- If you get "permission denied" errors on Linux, add your user to docker group: `sudo usermod -aG docker $USER`
+
+#### Option 2: Manual Setup (For Development)
+
+If you want to run services individually for development:
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/krabhishek8260/trade-analytics.git
+   cd trade-analytics
+   ```
+
+2. **Install dependencies:**
+
+   **Frontend:**
+   ```bash
+   cd frontend
+   npm install
+   cd ..
+   ```
+
+   **Backend:**
+   ```bash
+   cd backend
+   pip install -r requirements.txt
+   cd ..
+   ```
+
+3. **Start required services (PostgreSQL and Redis):**
+   ```bash
+   # Start only database and cache services
+   docker-compose up -d postgres redis
+   ```
+
+4. **Run the backend (in a new terminal):**
+   ```bash
+   cd backend
+   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+   ```
+
+5. **Run the frontend (in another terminal):**
+   ```bash
+   cd frontend
+   npm run dev
+   ```
+
+6. **Access the application:**
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:8000
+   - API Documentation: http://localhost:8000/docs
+
+### Database & Authentication Setup
+
+#### Using Docker (Recommended for Local Development)
+
+When using Docker Compose, PostgreSQL and Redis are automatically configured. You don't need to install them separately.
+
+**Default credentials (already configured in docker-compose.yml):**
+- PostgreSQL: `postgres:postgres@localhost:5432/tradeanalytics`
+- Redis: `localhost:6379`
+
+#### Setting up Supabase (Optional - for authentication)
+
+Supabase provides authentication and additional database features. You can:
+
+**Option A: Skip Supabase (Use Demo Mode)**
+- The app works in demo mode without Supabase
+- Skip the Supabase environment variables
+- Authentication will use a demo user
+
+**Option B: Set up Supabase (For production-like setup)**
+
+1. **Create a Supabase account** (free tier available)
+   - Go to [supabase.com](https://supabase.com)
+   - Create a new account
+   - Create a new project
+
+2. **Get your Supabase credentials:**
+   - Go to Project Settings → API
+   - Copy the `Project URL` (this is your `SUPABASE_URL`)
+   - Copy the `anon public` key (this is your `SUPABASE_ANON_KEY`)
+
+3. **Configure environment variables** (see below)
+
+### Environment Variables Setup
+
+This section explains how to get all the values needed for your environment files.
+
+#### Backend Environment Variables
+
+Create `backend/.env` with the following variables:
+
+##### 1. Database URL (Required)
+
+**If using Docker (recommended):**
 ```bash
-git clone <repository-url>
-cd tradeanalytics-v2
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/tradeanalytics
 ```
 
-2. Start the development environment:
+This is already configured in `docker-compose.yml`. No setup needed!
+
+**Format explained:**
+- `postgresql://` - Database type
+- `postgres:postgres` - username:password
+- `@localhost:5432` - host:port
+- `/tradeanalytics` - database name
+
+##### 2. Redis URL (Required)
+
+**Option A: Using Docker (recommended):**
 ```bash
-docker-compose up -d
+REDIS_URL=redis://localhost:6379
 ```
 
-3. The application will be available at:
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8000
-- API Documentation: http://localhost:8000/docs
+This is already configured in `docker-compose.yml`. No setup needed!
 
-### Environment Variables
+**Option B: Local Redis Installation**
 
-Create `.env` files in both `backend/` and `frontend/` directories:
+If you want to run Redis directly on your machine instead of Docker:
 
-**backend/.env**:
+1. **Install Redis:**
+   ```bash
+   # macOS
+   brew install redis
+
+   # Ubuntu/Debian
+   sudo apt-get install redis-server
+
+   # Windows (via WSL or download from redis.io)
+   # Or use: choco install redis-64
+   ```
+
+2. **Start Redis:**
+   ```bash
+   # macOS (using Homebrew)
+   brew services start redis
+
+   # Or start manually
+   redis-server
+
+   # Ubuntu/Debian
+   sudo systemctl start redis-server
+   ```
+
+3. **Verify Redis is running:**
+   ```bash
+   redis-cli ping
+   # Should return: PONG
+   ```
+
+4. **Use in your `.env`:**
+   ```bash
+   REDIS_URL=redis://localhost:6379
+   ```
+
+5. **Stop Redis when done:**
+   ```bash
+   # macOS (using Homebrew)
+   brew services stop redis
+
+   # Ubuntu/Debian
+   sudo systemctl stop redis-server
+   ```
+
+**Format explained:**
+- `redis://` - Protocol
+- `localhost:6379` - host:port (default Redis port)
+
+##### 3. JWT Secret (Required)
+
+**For local development:**
+```bash
+JWT_SECRET=local-dev-secret-key-change-in-production
 ```
+
+This can be any random string. For production, use a secure random string:
+```bash
+# Generate a secure secret (run this in terminal)
+openssl rand -hex 32
+```
+
+##### 4. Supabase Configuration (Optional)
+
+**Option A: Skip Supabase (Demo Mode)**
+
+Simply don't include these variables. The app will work in demo mode.
+
+**Option B: Local Supabase (Recommended for Development)**
+
+Run Supabase locally using Docker. This is free and doesn't require a Supabase account.
+
+1. **Install Supabase CLI:**
+   ```bash
+   # macOS/Linux
+   brew install supabase/tap/supabase
+
+   # Or via npm (all platforms)
+   npm install -g supabase
+   ```
+
+2. **Initialize Supabase in your project:**
+   ```bash
+   # Run from project root
+   supabase init
+   ```
+
+3. **Start local Supabase:**
+   ```bash
+   supabase start
+   ```
+
+   This will:
+   - Download Supabase Docker images (~2GB first time)
+   - Start PostgreSQL, Auth, Storage, and other services
+   - Take 2-5 minutes on first run
+
+4. **Get your local credentials:**
+
+   After `supabase start` completes, you'll see output like:
+   ```
+   API URL: http://localhost:54321
+   anon key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+   service_role key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+   ```
+
+   Copy these values to your `.env`:
+   ```bash
+   SUPABASE_URL=http://localhost:54321
+   SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+   ```
+
+5. **Access Supabase Studio (optional):**
+
+   Open http://localhost:54323 in your browser to access the Supabase admin dashboard.
+
+6. **Stop local Supabase when done:**
+   ```bash
+   supabase stop
+   ```
+
+**Useful commands:**
+```bash
+supabase status    # Check if Supabase is running
+supabase stop      # Stop all Supabase containers
+supabase db reset  # Reset database to initial state
+```
+
+**Option C: Cloud Supabase (Production Setup)**
+
+Use the hosted Supabase service for production or if you prefer cloud setup.
+
+1. **Go to [supabase.com](https://supabase.com)** and sign up/login
+
+2. **Create a new project:**
+   - Click "New Project"
+   - Choose your organization (or create one)
+   - Enter project details:
+     - **Name**: `tradeanalytics` (or any name you prefer)
+     - **Database Password**: Choose a strong password (save this!)
+     - **Region**: Choose closest to you
+   - Click "Create new project"
+   - Wait 2-3 minutes for setup to complete
+
+3. **Get your credentials:**
+   - Once project is ready, go to **Project Settings** (gear icon in sidebar)
+   - Click **API** in the left menu
+   - You'll see:
+
+   **Project URL:**
+   ```
+   https://xxxxxxxxxxxxx.supabase.co
+   ```
+   Copy this as your `SUPABASE_URL`
+
+   **anon public key:** (under "Project API keys")
+   ```
+   eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+   ```
+   Copy this as your `SUPABASE_ANON_KEY`
+
+4. **Add to your `.env` file:**
+   ```bash
+   SUPABASE_URL=https://xxxxxxxxxxxxx.supabase.co
+   SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+   ```
+
+##### Complete `backend/.env` Example
+
+**Minimal (Docker + Demo Mode):**
+```bash
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/tradeanalytics
 REDIS_URL=redis://localhost:6379
-SUPABASE_URL=your_supabase_url
-SUPABASE_ANON_KEY=your_supabase_anon_key
-JWT_SECRET=your_jwt_secret
-ROBINHOOD_USERNAME=your_robinhood_username
-ROBINHOOD_PASSWORD=your_robinhood_password
+JWT_SECRET=local-dev-secret-key-change-in-production
 ```
 
-**frontend/.env.local**:
+**Full (with Supabase):**
+```bash
+# Database & Cache (automatically configured by Docker)
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/tradeanalytics
+REDIS_URL=redis://localhost:6379
+
+# Security
+JWT_SECRET=your-generated-secret-key-here
+
+# Supabase Authentication
+SUPABASE_URL=https://xxxxxxxxxxxxx.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
+
+#### Frontend Environment Variables
+
+Create `frontend/.env.local` with the following variables:
+
+##### 1. Backend API URL (Required)
+
+**For local development:**
+```bash
 NEXT_PUBLIC_API_URL=http://localhost:8000
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
+
+This tells the frontend where to find your backend API.
+
+**Note:** The `NEXT_PUBLIC_` prefix is required for Next.js to expose this variable to the browser.
+
+##### 2. Supabase Configuration (Optional)
+
+**If you set up Supabase in the backend:**
+
+Use the **same values** you got from Supabase:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://xxxxxxxxxxxxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+**If you're using Demo Mode:**
+
+Skip these variables - they're not needed.
+
+##### Complete `frontend/.env.local` Example
+
+**Minimal (Demo Mode):**
+```bash
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+**Full (with Supabase):**
+```bash
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_SUPABASE_URL=https://xxxxxxxxxxxxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+#### Quick Start Configuration (Minimal Setup)
+
+If you just want to run the app quickly without authentication:
+
+**backend/.env** (minimal):
+```bash
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/tradeanalytics
+REDIS_URL=redis://localhost:6379
+JWT_SECRET=local-dev-secret-key
+```
+
+**frontend/.env.local** (minimal):
+```bash
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+This will run the app with:
+- ✅ Local PostgreSQL database (via Docker)
+- ✅ Local Redis cache (via Docker)
+- ✅ Demo mode authentication (no Supabase needed)
 
 ## Development
 

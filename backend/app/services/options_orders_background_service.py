@@ -186,13 +186,13 @@ class OptionsOrdersBackgroundService:
         try:
             # Determine sync parameters
             if full_sync:
-                # Full sync - process more historical data for new users
-                days_back = 365  # 1 year max
-                logger.info(f"Full sync for user {user_id} - processing {days_back} days")
+                # Full sync - fetch entire history (no lookback)
+                days_back = None
+                logger.info(f"Full sync for user {user_id} - processing full history")
             else:
-                # Incremental sync - only recent data
-                days_back = 7  # Last week
-                logger.info(f"Incremental sync for user {user_id} - processing {days_back} days")
+                # Incremental sync - based on last sync timestamp, ignore lookback param
+                days_back = None
+                logger.info(f"Incremental sync for user {user_id} - fetching since last sync")
             
             # Set up progress callback for this user
             progress_data = {}

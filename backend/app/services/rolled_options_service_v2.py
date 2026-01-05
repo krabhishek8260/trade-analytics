@@ -226,7 +226,7 @@ class RolledOptionsServiceV2:
                 # Try to get existing data from database first
                 db_result = await self.options_order_service.get_rolled_options_chains_from_db(
                     user_id=user_id,
-                    days_back=days_back,
+                    days_back=None,  # analyze full history from DB
                     symbol=symbol,
                     status=status,
                     min_orders=min_orders
@@ -247,7 +247,7 @@ class RolledOptionsServiceV2:
                     # Perform incremental sync with timeout protection
                     sync_result = await self.options_order_service.sync_options_orders(
                         user_id=user_id,
-                        days_back=sync_days,
+                        days_back=None,  # full history on first sync
                         force_full_sync=False
                     )
                     
@@ -257,7 +257,7 @@ class RolledOptionsServiceV2:
                         # Now get the data from database
                         return await self.options_order_service.get_rolled_options_chains_from_db(
                             user_id=user_id,
-                            days_back=days_back,
+                            days_back=None,  # analyze full history from DB
                             symbol=symbol,
                             status=status,
                             min_orders=min_orders

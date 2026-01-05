@@ -153,7 +153,7 @@ async def get_authenticated_user_id(rh_service: RobinhoodService = Depends(get_r
     }
 )
 async def get_rolled_options_chains(
-    days_back: int = Query(30, ge=7, le=365, description="Number of days back to analyze (7-365, default 30 for faster loading)"),
+    days_back: int = Query(30, ge=7, le=365, description="Number of days back to analyze (for API-only paths)"),
     symbol: Optional[str] = Query(None, description="Filter by underlying symbol"),
     status: Optional[str] = Query(None, regex="^(active|closed|expired)$", description="Filter by chain status"),
     min_rolls: Optional[int] = Query(None, ge=1, description="Minimum number of rolls in chain"),
@@ -198,9 +198,10 @@ async def get_rolled_options_chains(
             logger.info(f"Using database-first chain detection with strategy codes for days_back={days_back}, symbol={symbol}")
             
             try:
+                # Use full-history DB analysis for chain detection
                 chains = await chain_detector.detect_chains_from_database(
                     user_id=user_id,
-                    days_back=days_back,
+                    days_back=None,
                     symbol=symbol
                 )
                 
@@ -671,7 +672,7 @@ async def get_available_symbols(
         # Get all chains without pagination to get all symbols
         chains = await chain_detector.detect_chains_from_database(
             user_id=user_id,
-            days_back=days_back,
+            days_back=None,
             symbol=None  # Get all symbols
         )
         

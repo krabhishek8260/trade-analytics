@@ -476,11 +476,12 @@ class RobinhoodService:
             logger.error(f"Error fetching options positions: {str(e)}")
             return {"success": False, "message": f"Error: {str(e)}"}
     
-    async def get_options_orders(self, limit: int = 50, since_time: Optional[datetime] = None) -> Dict[str, Any]:
+    async def get_options_orders(self, limit: Optional[int] = None, since_time: Optional[datetime] = None) -> Dict[str, Any]:
         """Get options orders with legs and executions"""
         # Include all parameters in cache key
         since_key = since_time.isoformat() if since_time else "all"
-        cache_key = f"options:orders:{limit}:{since_key}"
+        limit_key = str(limit) if isinstance(limit, int) else "all"
+        cache_key = f"options:orders:{limit_key}:{since_key}"
         
         # Try cache first
         cached_data = await cache.get(cache_key)
@@ -513,8 +514,9 @@ class RobinhoodService:
                         filtered_orders.append(order)
                 orders = filtered_orders
             
-            # Limit results
-            orders = orders[:limit]
+            # Limit results only if limit provided
+            if isinstance(limit, int):
+                orders = orders[:limit]
             
             order_data = []
             for order in orders:

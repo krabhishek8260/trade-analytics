@@ -57,7 +57,7 @@ async def sync_options_orders(
             sync_options_orders_background,
             options_order_service,
             user_id,
-            days_back,
+            None,  # ignore lookback and fetch full history
             force_full_sync
         )
         
@@ -78,7 +78,7 @@ async def sync_options_orders(
 async def sync_options_orders_background(
     options_order_service: OptionsOrderService,
     user_id: str,
-    days_back: int,
+    days_back: Optional[int],
     force_full_sync: bool
 ):
     """Background task to sync options orders"""

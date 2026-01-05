@@ -22,7 +22,7 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
   const [selectedSymbol, setSelectedSymbol] = useState<string>('')
   const [selectedStrategy, setSelectedStrategy] = useState<string>('')
   const [currentPage, setCurrentPage] = useState(1)
-  const [daysBack, setDaysBack] = useState(180) // Default to 180 days for better chain detection
+  // Days back is no longer relevant; backend analyzes full history
   const [pageSize, setPageSize] = useState(25)
   const [sectionExpanded, setSectionExpanded] = useState(true)
   const [syncing, setSyncing] = useState(false)
@@ -40,7 +40,7 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
     setExpandedOrders(new Set()) // Reset expanded orders when filters change
     fetchRolledOptions(1)
     fetchSyncStatus() // Also fetch sync status when filters change
-  }, [selectedStatus, selectedSymbol, selectedStrategy, daysBack, pageSize])
+  }, [selectedStatus, selectedSymbol, selectedStrategy, pageSize])
 
   // Fetch available symbols when component loads
   useEffect(() => {
@@ -101,7 +101,6 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
 
     try {
       const params: any = { 
-        days_back: daysBack,
         page,
         limit: pageSize
       }
@@ -239,9 +238,7 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
   }, [availableStrategies])
 
   if (loading && !rolledOptions) {
-    const estimatedTime = daysBack <= 30 ? "1-2 minutes" : 
-                         daysBack <= 90 ? "2-3 minutes" : 
-                         "3-5 minutes"
+    const estimatedTime = "1-2 minutes"
     
     return (
       <div className="space-y-4">
@@ -249,7 +246,7 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
         <div className="text-center py-8">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
           <p className="text-muted-foreground mb-2">
-            Analyzing rolled options chains for {daysBack} days...
+            Analyzing rolled options chains across your history...
           </p>
           <p className="text-sm text-muted-foreground">
             This complex analysis typically takes {estimatedTime}
@@ -275,7 +272,7 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
             <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded text-sm">
               <p className="text-blue-800 font-medium mb-2">Suggestions to avoid timeouts:</p>
               <ul className="text-blue-700 space-y-1 text-xs">
-                <li>• Reduce the date range to 30 days or less</li>
+                <li>• Reduce page size (10-25 items)</li>
                 <li>• Use pagination with smaller page sizes (10-25 items)</li>
                 <li>• Filter by specific symbol if analyzing one stock</li>
                 <li>• Try refreshing - the data may be cached from previous requests</li>
@@ -290,17 +287,7 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
             >
               Try again
             </button>
-            {daysBack > 30 && (
-              <button
-                onClick={() => {
-                  setDaysBack(30)
-                  fetchRolledOptions(1)
-                }}
-                className="text-xs text-blue-600 hover:underline"
-              >
-                Reduce to 30 days and retry
-              </button>
-            )}
+            
           </div>
         </div>
       </div>
@@ -336,21 +323,6 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
 
             {/* Filters */}
             <div className="flex flex-wrap gap-4 mb-6">
-              <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-1">Days Back</label>
-                <select
-                  value={daysBack}
-                  onChange={(e) => setDaysBack(Number(e.target.value))}
-                  className="px-3 py-2 border border-input bg-background rounded-md text-sm"
-                >
-                  <option value={7}>7 days</option>
-                  <option value={30}>30 days</option>
-                  <option value={60}>60 days</option>
-                  <option value={90}>90 days</option>
-                  <option value={180}>180 days (recommended)</option>
-                  <option value={365}>365 days (slower)</option>
-                </select>
-              </div>
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-1">Status</label>
                 <select
@@ -765,7 +737,6 @@ export function RolledOptionsSection({ formatCurrency, formatPercent }: RolledOp
       isOpen={showNetPremiumBreakdown}
       onClose={() => setShowNetPremiumBreakdown(false)}
       formatCurrency={formatCurrency}
-      daysBack={daysBack}
       status={selectedStatus}
     />
     </>
