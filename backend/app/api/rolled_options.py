@@ -51,16 +51,18 @@ async def get_authenticated_user_id(rh_service: RobinhoodService = Depends(get_r
     try:
         # Check if user is authenticated
         if not await rh_service.is_logged_in():
-            # Return the real user with data for testing
-            return "13461768-f848-4c04-aea2-46817bc9a3a5"
-        
+            # Use demo user ID from security module
+            from app.core.security import DEMO_USER_ID
+            return str(DEMO_USER_ID)
+
         # Get Robinhood user ID from API
         robinhood_user_id = rh_service.get_robinhood_user_id()
         if not robinhood_user_id:
             # Fallback to username-based lookup
             username = rh_service.get_username()
             if not username:
-                return "13461768-f848-4c04-aea2-46817bc9a3a5"
+                from app.core.security import DEMO_USER_ID
+                return str(DEMO_USER_ID)
             
             # Find or create user in database by username
             async for db in get_db():
@@ -139,8 +141,9 @@ async def get_authenticated_user_id(rh_service: RobinhoodService = Depends(get_r
             
     except Exception as e:
         logger.error(f"Error getting authenticated user: {str(e)}")
-        # Fallback to real user on error
-        return "13461768-f848-4c04-aea2-46817bc9a3a5"
+        # Fallback to demo user on error
+        from app.core.security import DEMO_USER_ID
+        return str(DEMO_USER_ID)
 
 @router.get(
     "/chains",
@@ -387,9 +390,9 @@ async def get_rolled_options_chain_details(
     try:
         # Use optimized service to get all chains (no pagination)
         result = await optimized_service.get_rolled_options_chains_optimized(
-            user_id="13461768-f848-4c04-aea2-46817bc9a3a5", # Real user with data
-            days_back=1095, 
-            page=1, 
+            user_id=str(user_id),
+            days_back=1095,
+            page=1,
             limit=10000
         )
         
@@ -447,7 +450,7 @@ async def get_rolled_options_summary(
     try:
         # Use optimized service to get summary from cached data
         result = await optimized_service.get_rolled_options_chains_optimized(
-            user_id="13461768-f848-4c04-aea2-46817bc9a3a5",  # Real user for summary
+            user_id=str(user_id),
             days_back=days_back,
             page=1,
             limit=10000,  # Get all data for summary
@@ -496,7 +499,7 @@ async def get_symbol_rolled_chains(
     try:
         # Use optimized service with symbol filtering
         result = await optimized_service.get_rolled_options_chains_optimized(
-            user_id="13461768-f848-4c04-aea2-46817bc9a3a5",  # Real user
+            user_id=str(user_id),
             days_back=days_back,
             symbol=symbol,  # Pass symbol filter to optimized service
             status=status,

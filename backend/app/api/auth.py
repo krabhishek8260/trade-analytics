@@ -47,50 +47,70 @@ def get_robinhood_service() -> RobinhoodService:
 
 
 async def get_or_create_user_for_robinhood_login(
-    db: AsyncSession, 
+    db: AsyncSession,
     username: str,
     rh_service: RobinhoodService
 ) -> User:
-    """Find or create user for Robinhood login"""
+    """Find or create user for Robinhood login using Robinhood's unique user ID"""
     try:
-        # First, try to find existing user by robinhood_username
+        # Get Robinhood user ID from the service
+        robinhood_user_id = rh_service.get_robinhood_user_id()
+
+        if robinhood_user_id:
+            # Try to use Robinhood's user ID as UUID
+            try:
+                # If it's already a valid UUID, use it
+                user_uuid = uuid.UUID(robinhood_user_id)
+            except ValueError:
+                # If not a valid UUID, create a deterministic UUID from it
+                import hashlib
+                hash_obj = hashlib.md5(robinhood_user_id.encode())
+                user_uuid = uuid.UUID(hash_obj.hexdigest())
+
+            # Try to find existing user by this ID
+            stmt = select(User).where(User.id == user_uuid)
+            result = await db.execute(stmt)
+            user = result.scalar_one_or_none()
+
+            if user:
+                # Update last login
+                user.last_login = datetime.utcnow()
+                user.robinhood_username = username
+                await db.commit()
+                logger.info(f"Found existing user: {user.id} for Robinhood user ID: {robinhood_user_id}")
+                return user
+
+            # Create new user with Robinhood's user ID
+            user = User(
+                id=user_uuid,
+                email=f"{username}@robinhood.local",
+                full_name=f"Robinhood User ({username})",
+                robinhood_username=username,
+                robinhood_user_id=robinhood_user_id,
+                is_active=True,
+                last_login=datetime.utcnow()
+            )
+
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+
+            logger.info(f"Created new user {user.id} for Robinhood user ID: {robinhood_user_id}")
+            return user
+
+        # Fallback: If no Robinhood user ID, try to find by username
         stmt = select(User).where(User.robinhood_username == username)
         result = await db.execute(stmt)
         user = result.scalar_one_or_none()
-        
+
         if user:
-            logger.info(f"Found existing user: {user.id} for Robinhood username: {username}")
+            user.last_login = datetime.utcnow()
+            await db.commit()
+            logger.info(f"Found existing user by username: {user.id} for Robinhood username: {username}")
             return user
-        
-        # Use the specific target user for development/demo
-        # In production, this would link to the actual Robinhood user ID
-        target_user_id = "13461768-f848-4c04-aea2-46817bc9a3a5"  # User with full options history
-        
-        # Verify this user exists and has data
-        result = await db.execute(text("""
-            SELECT user_id FROM options_orders 
-            WHERE user_id = :user_id
-            LIMIT 1
-        """), {"user_id": target_user_id})
-        existing_user_id = result.scalar_one_or_none()
-        
-        if existing_user_id:
-            # Try to find the user record for this ID  
-            stmt = select(User).where(User.id == uuid.UUID(str(target_user_id)))
-            result = await db.execute(stmt)
-            existing_user = result.scalar_one_or_none()
-            
-            if existing_user:
-                # Update the existing user with Robinhood credentials
-                existing_user.robinhood_username = username
-                existing_user.last_login = datetime.utcnow()
-                await db.commit()
-                logger.info(f"Updated existing user {existing_user.id} with Robinhood login")
-                return existing_user
-        
-        # Create new user with the target user ID
-        user_id = uuid.UUID(str(target_user_id)) if existing_user_id else uuid.uuid4()
-        
+
+        # Create new user with generated UUID (fallback when no Robinhood user ID)
+        user_id = uuid.uuid4()
         user = User(
             id=user_id,
             email=f"{username}@robinhood.local",
@@ -99,14 +119,14 @@ async def get_or_create_user_for_robinhood_login(
             is_active=True,
             last_login=datetime.utcnow()
         )
-        
+
         db.add(user)
         await db.commit()
         await db.refresh(user)
-        
-        logger.info(f"Created new user {user.id} for Robinhood username: {username}")
+
+        logger.warning(f"Created new user {user.id} without Robinhood user ID for username: {username}")
         return user
-        
+
     except Exception as e:
         logger.error(f"Error getting/creating user for Robinhood login: {str(e)}")
         await db.rollback()

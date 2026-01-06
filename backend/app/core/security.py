@@ -99,35 +99,8 @@ async def get_current_user_id(
     
     # Check if we have an authorization header
     if not authorization:
-        # Development fallback - try to find a real user with data
-        # This allows the system to work during development/testing
-        try:
-            from app.core.database import get_db
-            from sqlalchemy import select, text
-            
-            async for db in get_db():
-                # Use the specific target user for development/demo
-                # This should be the actual authenticated user's ID
-                target_user_id = "13461768-f848-4c04-aea2-46817bc9a3a5"  # User with full options history
-                
-                # Verify this user exists and has data
-                result = await db.execute(text("""
-                    SELECT user_id FROM options_orders 
-                    WHERE user_id = :user_id
-                    LIMIT 1
-                """), {"user_id": target_user_id})
-                actual_user_id = result.scalar_one_or_none()
-                
-                if actual_user_id:
-                    logger.debug(f"Development fallback: Using target user: {actual_user_id}")
-                    return uuid.UUID(str(target_user_id))
-                break
-                
-        except Exception as e:
-            logger.warning(f"Error finding actual user in fallback: {str(e)}")
-        
-        # Ultimate fallback to demo user ID
-        logger.debug(f"No actual user found, using demo user ID: {DEMO_USER_ID}")
+        # No authorization header - use demo user for development
+        logger.debug(f"No authorization header, using demo user ID: {DEMO_USER_ID}")
         return DEMO_USER_ID
     
     # Validate the JWT token

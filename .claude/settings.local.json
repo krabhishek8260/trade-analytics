@@ -18,7 +18,10 @@
       "Bash(git commit:*)",
       "Bash(bfg:*)",
       "Bash(git reflog expire:*)",
-      "Bash(git gc:*)"
+      "Bash(git gc:*)",
+      "Bash(supabase status:*)",
+      "Bash(curl:*)",
+      "Bash(docker-compose restart:*)"
     ],
     "deny": [],
     "ask": []
