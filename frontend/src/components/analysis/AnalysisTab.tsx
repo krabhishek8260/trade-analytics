@@ -73,13 +73,13 @@ export default function AnalysisTab({ formatCurrency, formatPercent }: AnalysisT
       // Load orders with current filters
       let ordersData: HistoricalOptionsOrder[] = []
       try {
-        ordersData = await getOptionsOrders({
+        const ordersResponse = await getOptionsOrders({
           limit: 100,
-          days_back: withFilters ? filters.daysBack : 90,
           underlying_symbol: withFilters ? (filters.ticker || undefined) : undefined,
           state: withFilters ? (filters.orderState || undefined) : undefined,
           strategy: withFilters ? (filters.strategy || undefined) : undefined
         })
+        ordersData = ordersResponse.data || []
       } catch (error) {
         console.error('Failed to fetch orders:', error)
         errors.orders = 'Failed to load trading history'
@@ -172,14 +172,15 @@ export default function AnalysisTab({ formatCurrency, formatPercent }: AnalysisT
 
     try {
       // Load minimal data for comparison
-      const [ordersData, performanceData, currentPositions] = await Promise.all([
-        getOptionsOrders({ limit: 100, days_back: filters.daysBack }),
+      const [ordersResponse, performanceData, currentPositions] = await Promise.all([
+        getOptionsOrders({ limit: 100 }),
         getTickerPerformance(),
         getOptionsPositions()
       ])
-      
+
+      const ordersData = ordersResponse.data || []
       const newDataHash = generateAnalysisDataHash(ordersData, performanceData, currentPositions, [])
-      
+
       if (lastDataHash && newDataHash !== lastDataHash) {
         console.log('New analysis data detected!')
         setHasNewData(true)
@@ -370,7 +371,7 @@ export default function AnalysisTab({ formatCurrency, formatPercent }: AnalysisT
           </div>
         )}
 
-        {/* Debug Info - Development Only */}
+        {/* Debug Info - Development Only (disabled for cleaner UI)
         {process.env.NODE_ENV === 'development' && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
             <h4 className="text-sm font-medium text-yellow-800 mb-2">Debug Info</h4>
@@ -383,7 +384,7 @@ export default function AnalysisTab({ formatCurrency, formatPercent }: AnalysisT
               <p>Errors: {Object.keys(dataErrors).join(', ') || 'None'}</p>
             </div>
           </div>
-        )}
+        )} */}
 
         <TickerPerformanceSection
           tickerPerformance={tickerPerformance}
